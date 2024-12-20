@@ -1,7 +1,7 @@
-ssl/*.crt 
-ssl/*.key
-ssl/*.srl
-ssl/*.csr
+**ssl/*.crt 
+**ssl/*.key
+**ssl/*.srl
+**ssl/*.csr
 
 client
 *.manifest
@@ -11,3 +11,10 @@ server_dcap
 
 pccs/config/default.json
 pccs/ssl_key/
+**db*
+
+**/build
+*.signed
+*_t.*
+*_t.*
+*.pem
