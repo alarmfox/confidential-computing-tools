@@ -216,7 +216,7 @@ Una volta creato, l'enclave genera un report, popolato i campi con la relativa S
 
 È bene notare che la chiave con cui viene firmato il report dalla QE non è presente all'interno di SGX all'uscita dalla fabbrica, ma viene generata utilizzando un \textit{Provisioning Enclave} con l'istruzione $EGETKEY$ il cui processo non è documentato, ma ha come input valori accessibili solo all'interno del processore come il \textbf{\textit{Secure Version Number (SVN)}}.
 
-L'attestazione può essere fatta con due procedimenti: EPID (\cref{fig:ra-epid}, utilizzata da remoto) o con DCAP (\cref{fig:ra-dcap}). Le due figure sono molto simili, ma con DCAP il servizio Intel viene contattato solo una volta dal \textit{Provisioning Enclave} e non ogni volta come in EPID. 
+L'attestazione può essere fatta con due procedimenti: EPID (\cref{fig:ra-epid}, utilizzata da remoto) o con DCAP (\cref{fig:ra-dcap}). Le due figure sono molto simili, ma con DCAP il servizio Intel viene contattato solo una volta dal \textit{Provisioning Enclave} e non ogni volta come in EPID. Come spiegato in \cref{sec:dcap-infrastructure-configuration}, l'attestazione EPID è deprecata e quindi non sarà approfondita.
 
 \begin{figure}[h]
 \centering
