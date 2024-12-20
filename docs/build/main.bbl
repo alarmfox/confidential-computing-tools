@@ -1,0 +1,65 @@
+\begin{thebibliography}{10}
+
+\bibitem{GramineDocs}
+{ Gramine documentation}.
+\newblock \url{https://gramine.readthedocs.io/en/v1.8/}.
+
+\bibitem{IntelSDK}
+{ Intel SGX, Documentation for Linux SDK }.
+\newblock \url{ https://download.01.org/intel-sgx/sgx-linux/2.25/docs/ }.
+
+\bibitem{openenclave}
+{ Open Enclave repository }.
+\newblock \url{https://github.com/openenclave/openenclave}.
+
+\bibitem{Tsai2017}
+Chia che Tsai, Donald~E. Porter, and Mona Vij.
+\newblock Graphene-sgx: A practical library os for unmodified applications on sgx.
+\newblock In {\em 2017 USENIX Annual Technical Conference (USENIX ATC 17)}, pages 645--658, Santa Clara, CA, jul 2017. USENIX Association.
+
+\bibitem{Cheng2024}
+Pau-Chen Cheng, Wojciech Ozga, Enriquillo Valdez, Salman Ahmed, Zhongshu Gu, Hani Jamjoom, Hubertus Franke, and James Bottomley.
+\newblock Intel tdx demystified: A top-down approach.
+\newblock {\em ACM Comput. Surv.}, 56(9), apr 2024.
+
+\bibitem{Costan2016}
+Victor Costan and Srinivas Devadas.
+\newblock Intel sgx explained.
+\newblock Cryptology ePrint Archive, Paper 2016/086, 2016.
+
+\bibitem{quickstart-dcap}
+Intel.
+\newblock { Tutorial DCAP setup}.
+\newblock \url{ https://www.intel.com/content/www/us/en/developer/articles/guide/intel-software-guard-extensions-data-center-attestation-primitives-quick-install-guide.html }, 2018.
+
+\bibitem{sgx-dcap-docs}
+Intel.
+\newblock { DCAP Documentation References}.
+\newblock \url{ https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/docs/ }, 2024.
+
+\bibitem{sgx-dcap-repo}
+Intel.
+\newblock { DCAP Source Code}.
+\newblock \url{ https://github.com/intel/SGXDataCenterAttestationPrimitives }, 2024.
+
+\bibitem{gramine-repo}
+Intel.
+\newblock { Gramine Source Code}.
+\newblock \url{ https://github.com/gramineproject/gramine/}, 2024.
+
+\bibitem{linux-sgx}
+Intel.
+\newblock { Linux-sgx Source Code}.
+\newblock \url{ https://github.com/intel/linux-sgx/}, 2024.
+
+\bibitem{Jauernig2020}
+Patrick Jauernig, Ahmad-Reza Sadeghi, and Emmanuel Stapf.
+\newblock Trusted execution environments: Properties, applications, and challenges.
+\newblock {\em IEEE Security \& Privacy}, 18(2):56--60, 2020.
+
+\bibitem{10.1145/2948618.2954331}
+Frank McKeen, Ilya Alexandrovich, Ittai Anati, Dror Caspi, Simon Johnson, Rebekah Leslie-Hurd, and Carlos Rozas.
+\newblock Intel® software guard extensions (intel® sgx) support for dynamic memory management inside an enclave.
+\newblock In {\em Proceedings of the Hardware and Architectural Support for Security and Privacy 2016}, HASP '16, New York, NY, USA, 2016. Association for Computing Machinery.
+
+\end{thebibliography}

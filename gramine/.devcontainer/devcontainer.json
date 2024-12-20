@@ -1,0 +1,13 @@
+{
+  "name": "gramine",
+  "image": "gramine-dcap",
+  "runArgs": [
+    "--device",
+    "/dev/sgx_enclave",
+    "--device",
+    "/dev/sgx_provision",
+    "--network=host",
+    "-v",
+    "/home/stefano/Desktop/project/gramine/examples:/workspace/"
+  ]
+}

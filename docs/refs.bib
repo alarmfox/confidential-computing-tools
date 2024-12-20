@@ -1,0 +1,155 @@
+@article{Cheng2024,
+  author = {Pau-Chen Cheng and Wojciech Ozga and Enriquillo Valdez and Salman
+            Ahmed and Zhongshu Gu and Hani Jamjoom and Hubertus Franke and James
+            Bottomley},
+  title = {Intel TDX Demystified: A Top-Down Approach},
+  year = {2024},
+  issue_date = {September 2024},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  volume = {56},
+  number = {9},
+  issn = {0360-0300},
+  url = {https://doi.org/10.1145/3652597},
+  doi = {10.1145/3652597},
+  abstract = {Intel Trust Domain Extensions (TDX) is an architectural extension
+              in the 4th Generation Intel Xeon Scalable Processor that supports
+              confidential computing. TDX allows the deployment of virtual
+              machines in the Secure-Arbitration Mode (SEAM) with encrypted CPU
+              state and memory, integrity protection, and remote attestation. TDX
+              aims at enforcing hardware-assisted isolation for virtual machines
+              and minimize the attack surface exposed to host platforms, which
+              are considered to be untrustworthy or adversarial in the
+              confidential computing’s new threat model. TDX can be leveraged by
+              regulated industries or sensitive data holders to outsource their
+              computations and data with end-to-end protection in public cloud
+              infrastructures. This article aims at providing a comprehensive
+              understanding of TDX to potential adopters, domain experts, and
+              security researchers looking to leverage the technology for their
+              own purposes. We adopt a top-down approach, starting with
+              high-level security principles and moving to low-level technical
+              details of TDX. Our analysis is based on publicly available
+              documentation and source code, offering insights from security
+              researchers outside of Intel.},
+  journal = {ACM Comput. Surv.},
+  month = {apr},
+  articleno = {238},
+  numpages = {33},
+  keywords = {Confidential computing, trusted execution environment},
+}
+
+@misc{Costan2016,
+  author = {Victor Costan and Srinivas Devadas},
+  title = {Intel SGX Explained},
+  howpublished = {Cryptology ePrint Archive, Paper 2016/086},
+  year = {2016},
+  url = {https://eprint.iacr.org/2016/086},
+}
+
+@inproceedings{Tsai2017,
+  author = {Chia-che Tsai and Donald E. Porter and Mona Vij},
+  title = {Graphene-SGX: A Practical Library OS for Unmodified Applications on
+           SGX},
+  booktitle = {2017 USENIX Annual Technical Conference (USENIX ATC 17)},
+  year = {2017},
+  isbn = {978-1-931971-38-6},
+  address = {Santa Clara, CA},
+  pages = {645--658},
+  url = {
+         https://www.usenix.org/conference/atc17/technical-sessions/presentation/tsai
+         },
+  publisher = {USENIX Association},
+  month = {jul},
+}
+@article{Jauernig2020,
+  author = {Patrick Jauernig and Ahmad-Reza Sadeghi and Emmanuel Stapf},
+  journal = {IEEE Security \& Privacy},
+  title = {Trusted Execution Environments: Properties, Applications, and
+           Challenges},
+  year = {2020},
+  volume = {18},
+  number = {2},
+  pages = {56--60},
+  keywords = {Hardware, Computer hacking, Computer architecture, Encryption,
+              Mobile handsets, Operating systems},
+  doi = {10.1109/MSEC.2019.2947124},
+}
+
+  @inproceedings{10.1145/2948618.2954331,
+  author = {McKeen, Frank and Alexandrovich, Ilya and Anati, Ittai and Caspi,
+            Dror and Johnson, Simon and Leslie-Hurd, Rebekah and Rozas, Carlos},
+  title = {Intel® Software Guard Extensions (Intel® SGX) Support for Dynamic
+           Memory Management Inside an Enclave},
+  year = {2016},
+  isbn = {9781450347693},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  url = {https://doi.org/10.1145/2948618.2954331},
+  doi = {10.1145/2948618.2954331},
+  abstract = {We introduce Intel® Software Guard Extensions (Intel® SGX) SGX2
+              which extends the SGX instruction set to include dynamic memory
+              management support for enclaves. Intel® SGX is a subset of the
+              Intel Architecture Instruction Set [1]. SGX1 allows an application
+              developer to build a trusted environment and execute inside that
+              space. However SGX1 imposes limitations regarding memory commitment
+              and reuse of enclave memory. The software developer is required to
+              allocate all memory at enclave instantiation. This paper describes
+              new instructions and programming models to extend support for
+              dynamic memory management inside an enclave.},
+  booktitle = {Proceedings of the Hardware and Architectural Support for
+               Security and Privacy 2016},
+  articleno = {10},
+  numpages = {9},
+  location = {Seoul, Republic of Korea},
+  series = {HASP '16},
+}
+
+@misc{GramineDocs,
+  howpublished = {\url{https://gramine.readthedocs.io/en/v1.8/}},
+  title = {{ Gramine documentation}},
+}
+
+@misc{IntelSDK,
+  howpublished = {\url{ https://download.01.org/intel-sgx/sgx-linux/2.25/docs/ }
+                  },
+  title = {{ Intel SGX, Documentation for Linux SDK }},
+}
+@misc{openenclave,
+  howpublished = {\url{https://github.com/openenclave/openenclave}},
+  title = {{ Open Enclave repository }},
+}
+@misc{quickstart-dcap,
+  howpublished = {\url{
+                  https://www.intel.com/content/www/us/en/developer/articles/guide/intel-software-guard-extensions-data-center-attestation-primitives-quick-install-guide.html
+                  } },
+  author = {Intel},
+  year = {2018},
+  title = {{ Tutorial DCAP setup}},
+}
+
+@misc{sgx-dcap-docs,
+  howpublished = {\url{
+                  https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/docs/ } },
+  author = {Intel},
+  year = {2024},
+  title = {{ DCAP Documentation References}},
+}
+@misc{sgx-dcap-repo,
+  howpublished = {\url{
+                  https://github.com/intel/SGXDataCenterAttestationPrimitives } },
+  author = {Intel},
+  year = {2024},
+  title = {{ DCAP Source Code}},
+}
+@misc{linux-sgx,
+  howpublished = {\url{ https://github.com/intel/linux-sgx/} },
+  author = {Intel},
+  year = {2024},
+  title = {{ Linux-sgx Source Code}},
+}
+@misc{gramine-repo,
+  howpublished = {\url{ https://github.com/gramineproject/gramine/} },
+  author = {Intel},
+  year = {2024},
+  title = {{ Gramine Source Code}},
+}

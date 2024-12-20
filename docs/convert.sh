@@ -1,0 +1,1 @@
+pandoc main.tex -f latex -t mediawiki --metadata link-citations --bibliography=refs.bib --csl=ieee.csl  --citeproc

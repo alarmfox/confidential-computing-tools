@@ -1,0 +1,5 @@
+{
+  "name": "open-enclave-sdk",
+  "image": "open-enclave-sdk",
+  "runArgs": ["--device", "/dev/sgx_enclave", "--device", "/dev/sgx_provision"]
+}

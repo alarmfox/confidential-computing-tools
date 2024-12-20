@@ -1,0 +1,18 @@
+libos.entrypoint = "/sqlite"
+loader.log_level = "{{ log_level }}"
+
+loader.env.LD_LIBRARY_PATH = "/lib"
+
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "/sqlite", uri = "file:sqlite" },
+    # SQLite creates several helper files for the DB, so we specify a path instead of a single file
+  { type = "encrypted", path = "/db/", uri = "file:db/", key_name = "sqlite-key" },
+]
+
+sgx.remote_attestation = "dcap"
+sgx.trusted_files = [
+  "file:sqlite",
+  "file:data/",
+  "file:{{ gramine.runtimedir() }}/",
+]
