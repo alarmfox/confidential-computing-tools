@@ -1,0 +1,40 @@
+libos.entrypoint = "/app"
+
+loader.log_level = "{{ log_level }}"
+
+loader.env.LD_LIBRARY_PATH = "/lib:/lib:{{ arch_libdir }}:/usr/{{ arch_libdir }}"
+loader.env.LD_PRELOAD = "libsecret_prov_attest.so"
+loader.env.SECRET_PROVISION_CONSTRUCTOR = "1"
+loader.env.SECRET_PROVISION_SET_KEY = "test"
+loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "/ca.crt"
+loader.env.SECRET_PROVISION_SERVERS = "localhost:4433"
+sgx.remote_attestation = "dcap"
+
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/usr/{{ arch_libdir }}", uri = "file:/usr/{{ arch_libdir }}" },
+  { path = "/ca.crt", uri = "file:ssl/ca.crt" },
+  { path = "/etc/hosts", uri = "file:hosts" },
+
+  { type = "encrypted", path = "/db1/", uri = "file:db1/", key_name = "default" },
+  { type = "encrypted", path = "/db2/", uri = "file:db2/", key_name = "_sgx_mrenclave" },
+  { type = "encrypted", path = "/db3/", uri = "file:db3/", key_name = "test" },
+]
+fs.insecure__keys.default = "ffeeddccbbaa99887766554433221100"
+
+sys.stack.size = "2M"
+sys.enable_extra_runtime_domain_names_conf = true
+
+sgx.trusted_files = [
+  "file:app",
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ arch_libdir }}/",
+  "file:/usr{{ arch_libdir }}/",
+  "file:./db1/",
+  "file:./db2/",
+  "file:./db3/",
+  "file:ssl/ca.crt",
+  "file:hosts",
+]
+
