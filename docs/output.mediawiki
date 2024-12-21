@@ -36,7 +36,7 @@ I Trusted Execution Environment realizzano una forma di isolamento dei processi 
 ! style="text-align: left;"| '''ARM TrustZone'''
 |-
 | style="text-align: left;"| '''Target devices'''
-| style="text-align: left;"| Clent PCs
+| style="text-align: left;"| Client PCs
 | style="text-align: left;"| Servers
 | style="text-align: left;"| Mobile devices
 |-
@@ -1406,19 +1406,38 @@ export RA_TLS_ALLOW_SW_HARDENING_NEEDED=1 </pre>
 Il server può specificare una ''callback'' per comunicare con il client per creare un protocollo più complicato. Come mostrato in [[#lst:server-secret-prov-callback|[lst:server-secret-prov-callback]]], il server può interagire con il client attraverso ''secret_provision_write'' e ''secret_provision_read''.
 
 <pre>static int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
- int ret;
- ret = secret_provision_read(ctx, buf, sizeof(buf));
+    int ret;
 
-  /* if we reached this callback, the first secret was sent successfully */
-  printf("--- Sent secret1 ---\n");
-  ret = secret_provision_write(ctx, (uint8_t*)SECOND_SECRET, sizeof(SECOND_SECRET));
-  if (ret < 0) {
-    fprintf(stderr, "[error] secret_provision_write() returned %d\n", ret);
-    return -EINVAL;
-  }
+    /* if we reached this callback, the first secret was sent successfully */
+    printf("--- Sent secret1 ---\n");
 
-  printf("--- Sent secret2 = '%s' ---\n", SECOND_SECRET);
-  return 0;
+    /* let's send another secret (just to show communication with secret-awaiting client) */
+    uint8_t buf[sizeof(EXPECTED_STRING)] = {0};
+
+    ret = secret_provision_read(ctx, buf, sizeof(buf));
+    if (ret < 0) {
+        if (ret == -ECONNRESET) {
+            /* client doesn't want another secret, shutdown communication gracefully */
+            return 0;
+        }
+
+        fprintf(stderr, "[error] secret_provision_read() returned %d\n", ret);
+        return -EINVAL;
+    }
+
+    if (memcmp(buf, EXPECTED_STRING, sizeof(EXPECTED_STRING))) {
+        fprintf(stderr, "[error] client sent '%s' but expected '%s'\n", buf, EXPECTED_STRING);
+        return -EINVAL;
+    }
+
+    ret = secret_provision_write(ctx, (uint8_t*)SECOND_SECRET, sizeof(SECOND_SECRET));
+    if (ret < 0) {
+        fprintf(stderr, "[error] secret_provision_write() returned %d\n", ret);
+        return -EINVAL;
+    }
+
+    printf("--- Sent secret2 = '%s' ---\n", SECOND_SECRET);
+    return 0;
 }
 int main(void) {
     puts("--- Starting the Secret Provisioning server on port " PORT " ---");
@@ -1770,7 +1789,7 @@ In TDX, l’attestazione è fortemente collegata alle ''architectural enclaves''
 </div>
 <div id="ref-example-repo" class="csl-entry">
 
-<span class="csl-left-margin">[8] </span><span class="csl-right-inline">G. Capasso,<span>“<span> Gramine Source Code</span>.”</span>[[ https://github.com/alarmfox/confidential-computing-tools
+<span class="csl-left-margin">[8] </span><span class="csl-right-inline">G. Capasso, <span>“<span class="nocase">Examples repository </span>.”</span>[[ https://github.com/alarmfox/confidential-computing-tools
                   | https://github.com/alarmfox/confidential-computing-tools
 ]], 2024.</span>
 

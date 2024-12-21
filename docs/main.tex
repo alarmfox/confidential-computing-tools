@@ -152,7 +152,7 @@ I Trusted Execution Environment realizzano una forma di isolamento dei processi 
 \begin{tabular}{|p{3cm}|p{3cm}|p{3cm}|p{3cm}|}
 \hline
 \textbf{} & \textbf{Intel SGX} & \textbf{AMD SEV} & \textbf{ARM TrustZone} \\ \hline
-\textbf{Target devices} & Clent PCs & Servers & Mobile devices  \\ \hline
+\textbf{Target devices} & Client PCs & Servers & Mobile devices  \\ \hline
 \textbf{Trust anchor} & CPU hardware e microcode & Platform security processor & TZ hardware e ARM trusted firmware \\ \hline
 \textbf{Cache side-channel protection} & No  & No  & No \\ \hline
 \textbf{Multiple security domains} & Si & Si & No \\ \hline
@@ -949,19 +949,38 @@ Il server può specificare una \textit{callback} per comunicare con il client pe
 
 \begin{lstlisting}[language=c,caption=Interazione continua con il client,label=lst:server-secret-prov-callback]
 static int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
- int ret;
- ret = secret_provision_read(ctx, buf, sizeof(buf));
+    int ret;
 
-  /* if we reached this callback, the first secret was sent successfully */
-  printf("--- Sent secret1 ---\n");
-  ret = secret_provision_write(ctx, (uint8_t*)SECOND_SECRET, sizeof(SECOND_SECRET));
-  if (ret < 0) {
-    fprintf(stderr, "[error] secret_provision_write() returned %d\n", ret);
-    return -EINVAL;
-  }
+    /* if we reached this callback, the first secret was sent successfully */
+    printf("--- Sent secret1 ---\n");
 
-  printf("--- Sent secret2 = '%s' ---\n", SECOND_SECRET);
-  return 0;
+    /* let's send another secret (just to show communication with secret-awaiting client) */
+    uint8_t buf[sizeof(EXPECTED_STRING)] = {0};
+
+    ret = secret_provision_read(ctx, buf, sizeof(buf));
+    if (ret < 0) {
+        if (ret == -ECONNRESET) {
+            /* client doesn't want another secret, shutdown communication gracefully */
+            return 0;
+        }
+
+        fprintf(stderr, "[error] secret_provision_read() returned %d\n", ret);
+        return -EINVAL;
+    }
+
+    if (memcmp(buf, EXPECTED_STRING, sizeof(EXPECTED_STRING))) {
+        fprintf(stderr, "[error] client sent '%s' but expected '%s'\n", buf, EXPECTED_STRING);
+        return -EINVAL;
+    }
+
+    ret = secret_provision_write(ctx, (uint8_t*)SECOND_SECRET, sizeof(SECOND_SECRET));
+    if (ret < 0) {
+        fprintf(stderr, "[error] secret_provision_write() returned %d\n", ret);
+        return -EINVAL;
+    }
+
+    printf("--- Sent secret2 = '%s' ---\n", SECOND_SECRET);
+    return 0;
 }
 int main(void) {
     puts("--- Starting the Secret Provisioning server on port " PORT " ---");
