@@ -1,0 +1,1825 @@
+<div class="titlepage">
+
+<span>'''''Strumenti per il confidential computing'''''</span><br />
+<span>'''''Sistemi Embedded'''''</span><br />
+<span>Anno Accademico 2023/2024</span>
+
+'''Giuseppe Capasso matr. M63001498'''
+
+
+</div>
+<span id="confidential-computing"></span>
+= Confidential computing =
+
+<span id="trusted-execution-environment-tee"></span>
+== Trusted Execution Environment (TEE) ==
+
+I Trusted Execution Environment realizzano una forma di isolamento dei processi e delle applicazioni in hardware per rendere sistemi resistenti ad attacchi fisici e ''side-channel''. I TEE sono pensati per essere utilizzati dai sistemi operativi (o hypervisor) in maniera alternativa a TPM e HSM. Ogni azienda propone una propria implementazione dei TEE che può andare dalla protezione di applicazioni in spazio utente (come Intel-SGX) a macchine virtuali sicure come (AMD-SEV e Intel TDX). In questo senso, ogni implementazione fa riferimento ad un ''threat model'' differente e può includere diversi elementi nella '''''Trusted Computing Base'' (TCB)'''. La [[#tab:tee-implementations|1]] riporta una panoramica delle princiapli tecnologie commerciali ed è tratta da [[#ref-Jauernig2020|[1]]]. I ''2'' approcci principali (''user-space isolation'' e ''VM isolation'') sono illustrati in [[#fig:tee-implementations|1]] (tratta da [[#ref-Jauernig2020|[1]]]) in cui viene mostrata anche la soluzione '''''Sanctum''''' sviluppata per Risc-V.
+
+<div id="fig:tee-implementations" class="figure">
+
+<div class="center">
+
+[[File:tee-implementations.png]]
+
+</div>
+
+</div>
+<div id="tab:tee-implementations">
+
+{| class="wikitable"
+|+ Confronto tra Intel SGX, AMD SEV e ARM TrustZone
+|-
+! style="text-align: left;"| ''''''
+! style="text-align: left;"| '''Intel SGX'''
+! style="text-align: left;"| '''AMD SEV'''
+! style="text-align: left;"| '''ARM TrustZone'''
+|-
+| style="text-align: left;"| '''Target devices'''
+| style="text-align: left;"| Clent PCs
+| style="text-align: left;"| Servers
+| style="text-align: left;"| Mobile devices
+|-
+| style="text-align: left;"| '''Trust anchor'''
+| style="text-align: left;"| CPU hardware e microcode
+| style="text-align: left;"| Platform security processor
+| style="text-align: left;"| TZ hardware e ARM trusted firmware
+|-
+| style="text-align: left;"| '''Cache side-channel protection'''
+| style="text-align: left;"| No
+| style="text-align: left;"| No
+| style="text-align: left;"| No
+|-
+| style="text-align: left;"| '''Multiple security domains'''
+| style="text-align: left;"| Si
+| style="text-align: left;"| Si
+| style="text-align: left;"| No
+|-
+| style="text-align: left;"| '''Security peripherals'''
+| style="text-align: left;"| No
+| style="text-align: left;"| No
+| style="text-align: left;"| Si
+|}
+
+
+</div>
+<span id="intel-software-guards-extentions-sgx"></span>
+== Intel Software Guards Extentions (SGX) ==
+
+Intel SGX è la prima forma di confidential computing proposta da Intel con supporto hardware. Lo scopo principale di SGX è quello di estendere l’ISA mettendo a disposzione delle istruzioni riservate per gestire applicazioni confidenziali. In un’applicazione trusted, sia dati che istruzioni non lasciano la CPU in chiaro assicurando tre proprietà:
+
+* Confidenzialità: un’altra applicazione non può leggere le istruzioni e i dati di un’applicazione trusted;
+* Integrità: sia all’avvio che durante l’esecuzione dell’applicazione viene effettuato un controllo crittografico dello spazio di memoria.
+* Attestazione: le applicazioni devono poter dimostrare la loro '''''trustworthiness''''' sia ad altre applicazioni ('''''local attestation''''') che a sistemi remoti ('''''remote attestation''''');
+
+SGX aggiunge all’ISA dell’architettura classica ''18'' istruzioni con le quali si può creare una regione confidenziale, eseguire il processo di attestazione e verificare l’integrità dell’applicazione. SGX prevede un threat model in cui sono considerati trusted solo la CPU e il codice in esecuzione nell’enclave assumendo che un attore malevolo possa prendere effettuare sia attacchi hardware (eg. '''''cold boot''''') che al livello OS (eg. '''''ROP''''').
+
+<span id="sec:enclave"></span>
+=== Enclave ===
+
+L’'''''enclave'''''[[#ref-Costan2016|[2]]] è la prima astrazione fornita da SGX e definisce un perimetro di sicurezza all’interno dello spazio di indirizzamento virtuale. La memoria all’interno dell’enclave è cifrata e accessibile solo dall’interno dell’enclave stessa. La memoria viene cifrata con un '''MEE''' (''Memory Encryption Engine'') la cui implementazione non è stata discussa ufficialmente.
+
+Codice, dati e metadati di un’enclave vengono gestite da SGX in un’area riservata della DRAM detta '''PRM''' (''Processor Reserved Memory'') che contiene la '''EPC''' (''Enclave Page Cache'') a cui si accede solo attraverso le istruzioni SGX. La EPC ha una dimensione di ''128/256 MB'' e può essere vista come una ''cache L3'', ma non impone alcun limite alla dimensione delle enclave visto che è supportato il processo di ''eviction''. Il compito di gestire la tabella delle pagine è affidato al sistema operativo o hypervisor. Dato che il gestore della memoria non è parte della TCB, SGX controlla le operazioni effettuate dal gestore della memoria attraverso la '''EPCM''' (''Enclave Page Cache Map'').
+
+Un’applicazione trusted deve creare un’enclave con l’istruzione ''ECREATE''. SGX assegna per ogni enclave una '''SECS''' (''SGX Enclave Control Structure'') in cui vengono conservati tutti i metadata per enclave. In particolare, i metadata sono memorizzati sottoforma di '''attributi'''.
+
+Alla creazione, viene allocata una SECS insieme alla EPC. Con l’istruzione ''EADD'' vengono caricati codice e dati dell’applicazione: nello specifico vengono copiate pagine dalla parte non trusted del sistema a quella dell’enclave con un controllo validità. Per essere eseguita, l’enclave deve ottenere un '''EINIT Token Structure'''. Questo token viene fornito da un’enclave privilegiata detta '''(LE)''' ''Launch Enclave'' fornita da Intel e firmata con una chiave speciale all’interno dell’architettura SGX. Solo la '''LE''' può chiamare la ''EINIT'' che può impostare l’attributo '''INIT''' a ''1''. La terminazione viene fatta con ''EREMOVE'' che dealloca la EPC e la EPCM.
+
+Quando un’enclave entra in esecuzione il processore opera in '''enclave mode''' con la quale riceve i privilegi di accedere alla EPC. Per poter transitare in enclave mode, il processore deve eseguire una ''EENTER'' e per lasciare la modalità esegue una ''EEXIT''. ''EENTER'' non effettua un cambio di privilegio (si esegue sempre a '''ring 3'''), ma effettua un salto memorizzando il '''RIP''' (''Return Instruction Pointer''). ''EENTER'' è un’operazione sincrona. ''EEXIT'' può essere eseguita solo da un processore in enclave mode ed effettua un salto al RIP memorizzato durante il ''EENTER'' in maniera sincrona. Nel caso in cui ci sia un’eccezione, l’uscita avviene in maniera asincrona con ''AEX'' (''Asynchronous Enclave Exit'').
+
+<span id="limiti-di-sgx"></span>
+==== Limiti di SGX ====
+
+Intel SGX, pur offrendo un elevato livello di sicurezza, presenta alcune limitazioni intrinseche che devono essere considerate durante lo sviluppo di applicazioni. Queste limitazioni derivano principalmente dal design dell’architettura e dalle restrizioni imposte per mantenere l’integrità e la sicurezza dell’enclave. Di seguito sono elencate alcune delle principali limitazioni di SGX:
+
+* '''Limitazioni di memoria''': la dimensione della ''Enclave Page Cache'' (EPC) è limitata a 128/256 MB, il che può rappresentare un vincolo significativo per applicazioni che richiedono grandi quantità di memoria. Sebbene SGX supporti il processo di ''eviction'', questo può introdurre overhead prestazionale;
+* '''Assenza di protezione contro attacchi side-channel''': SGX non fornisce protezione contro attacchi side-channel basati su cache, timing, o power analysis. Questi attacchi possono potenzialmente rivelare informazioni sensibili anche se l’enclave è isolata;
+* '''Limitazioni nelle operazioni di I/O''': le enclavi SGX non possono eseguire direttamente operazioni di I/O. Tutte le operazioni di I/O devono essere delegate al sistema operativo host, il che richiede un’uscita dall’enclave (''ocall'');
+
+<span id="comunicazione-con-mondo-esterno"></span>
+==== Comunicazione con mondo esterno ====
+
+Date le limitazioni, SGX fornisce un meccanismo per interagire con l’input output attraverso le '''''Enclave Call'' (ECALL)''' (per eseguire una funzione in ambiente sicuro) e le '''''Out Call'' (OCALL)''' (esegue una funzione in spazio non ''trusted''). Queste due tipologie di operazioni non comportano un cambio di privilegio strettamente, ma, ad esempio una ''OCALL'' consente di eseguire una system call (o di interfacciarsi con l’I/O). Questa sequenza di operazioni è una delle principali fonti di degradazione delle prestazioni in applicazioni I/O bound in SGX perchè il sistema spende molto tempo nella fase EENTER e EEXIT, come illustrato in [[#fig:enclave-lifecycle|2]]
+
+<div id="fig:enclave-lifecycle" class="figure">
+
+<div class="center">
+
+[[File:enclave-lifecycle.png]]
+
+</div>
+
+</div>
+<span id="attestazione"></span>
+=== Attestazione ===
+
+L’attestazione è un processo fondamentale nel confidential computing che consente di verificare l’integrità e l’affidabilità di un’applicazione o di un ambiente di esecuzione. Questo processo permette a un’entità di dimostrare a un’altra entità che il proprio stato è sicuro e che non è stato compromesso.Esistono due tipi principali di attestazione:
+
+* locale: avviene tra componenti all’interno dello stesso sistema;
+* remota: coinvolge la verifica da parte di un’entità esterna.
+
+In SGX, l’attestazione viene creata da un’altra enclave privilegiata detta '''QE''' (''Quoting Enclave'') gestita da Intel che può accedere alla chiave per firmare l’attestazione. Prima di procedere con l’attestazione remota, bisogna creare un canale di comunicazione sicuro con la quoting enclave e, pertanto, è previsto un sistema di attestazione locale.
+
+Una volta creato, l’enclave genera un report, popolato i campi con la relativa SECS, con l’istruzione ''EREPORT'', lo firma con una chiave scambiata con la ''QE'' e allega anche un MAC per il controllo dell’integrità.
+
+È bene notare che la chiave con cui viene firmato il report dalla QE non è presente all’interno di SGX all’uscita dalla fabbrica, ma viene generata utilizzando un ''Provisioning Enclave'' con l’istruzione ''EGETKEY'' il cui processo non è documentato, ma ha come input valori accessibili solo all’interno del processore come il '''''Secure Version Number (SVN)'''''.
+
+L’attestazione può essere fatta con due procedimenti: EPID ([[#fig:ra-epid|3]], utilizzata da remoto) o con DCAP ([[#fig:ra-dcap|5]]). Le due figure sono molto simili, ma con DCAP il servizio Intel viene contattato solo una volta dal ''Provisioning Enclave'' e non ogni volta come in EPID. Come spiegato in [[#sec:dcap-infrastructure-configuration|3.1.3]], l’attestazione EPID è deprecata e quindi non sarà approfondita.
+
+<div id="fig:ra-dcap" class="figure">
+
+<div id="fig:ra-epid" class="figure">
+
+[[File:ra-sgx-epid.png]]
+
+</div>
+<div id="fig:ra-dcap" class="figure">
+
+[[File:ra-sgx-dcap.png]]
+
+</div>
+
+</div>
+<span id="sgx2"></span>
+=== SGX2 ===
+
+L’architettura descritta in [[#sec:enclave|1.2.1]] è implmentata completamente in SGX1. In [[#ref-10.1145/2948618.2954331|[3]]], è mostrata un’estensione della versione base di SGX a cui ci si riferisce come SGX2. Il componente principale è l’'''''Enclave Dynamic Memory Management'' (EDMM)''' che permette di gestire dinamicamente le pagine di memoria dall’interno di un enclave aggiungendo istruzioni per agire sulla secondo un architettura mostrata in [[#fig:sgx2|6]]. In [[#ref-10.1145/2948618.2954331|[3]]], sono illustrati i protcolli con cui ''External Memory Manager'' e ''Internal Memory Manager'' comunicano per effettuare modifiche sulla EPC.
+
+<div id="fig:sgx2" class="figure">
+
+<div class="center">
+
+[[File:sgx2.png]]
+
+</div>
+
+</div>
+<span id="strumenti"></span>
+= Strumenti =
+
+<span id="sec:classification"></span>
+== Classificazione ==
+
+Gli strumenti utilizzati per realizzare applicazioni ''trusted'' che operano in TEE sono diversi e possono essere classificati secondo diversi criteri:
+
+* astrazione dall’architettura hardware: alcuni strumenti si interpongono al sistema operativo fornendo un insieme di ABI riscritte su cui si effettuano dei controlli o, come nel caso di ''occlum'' fornisce un insieme di servizi che le applicazioni possono usare;
+* trasparenza con il codice sorgente: alcuni strumenti come ''open enclave'' richiede una ristrutturazione dell’applicazione in cui si distinguono chiaramente le parti sicure da quelle non sicure avendo come granularità la funzione;
+
+Una panoramica degli strumenti analizzati è riportata in [[#tab:TEE_tools_comparison|2]].
+
+<div id="tab:TEE_tools_comparison">
+
+{| class="wikitable"
+|+ Confronto tra strumenti per lo sviluppo di applicazioni trusted in TEE
+|-
+! style="text-align: center;"|
+! style="text-align: left;"| '''Astrazione dall’architettura hardware'''
+! style="text-align: left;"| '''Trasparenza con il codice sorgente'''
+|-
+| style="text-align: center;"| '''Intel SGX SDK'''
+| style="text-align: left;"| Specifico per SGX, fornisce un insieme completo di API per sfruttare direttamente le capacità hardware di Intel SGX.
+| style="text-align: left;"| Richiede la divisione esplicita tra codice sicuro (enclave) e non sicuro, con un maggiore onere per lo sviluppatore.
+|-
+| style="text-align: center;"| '''Rust SGX'''
+| style="text-align: left;"| Specifico per SGX. Implementa un target diverso per il compilatore Rust
+| style="text-align: left;"| Supporta solo applicazioni scritte un Rust
+|-
+| style="text-align: center;"| '''Open Enclave SDK'''
+| style="text-align: left;"| Supporta diverse architetture hardware (ad es. Intel SGX, ARM TrustZone) attraverso un’astrazione comune.
+| style="text-align: left;"| Richiede una chiara distinzione tra le funzioni sicure e non sicure nel codice sorgente, con una ristrutturazione esplicita.
+|-
+| style="text-align: center;"| '''Gramine-SGX'''
+| style="text-align: left;"| Implementa un livello di compatibilità (libOS) per eseguire applicazioni non modificate in SGX, rendendole indipendenti dall’hardware sottostante.
+| style="text-align: left;"| Non necessita di modifiche al codice sorgente dell’applicazione, facilitando l’integrazione di software legacy.
+|-
+| style="text-align: center;"| '''Occlum'''
+| style="text-align: left;"| Fornisce un insieme di ABI riscritte e servizi di runtime per operare in TEE, semplificando l’implementazione e l’adattamento al TEE specifico.
+| style="text-align: left;"| L’applicazione non richiede modifiche significative al codice, poiché Occlum maschera le complessità dell’hardware sottostante.
+|-
+| style="text-align: center;"| '''Enarx'''
+| style="text-align: left;"| Astratto rispetto all’hardware, utilizza WebAssembly come formato intermedio, garantendo portabilità su diversi TEE.
+| style="text-align: left;"| Le applicazioni devono essere portate in WebAssembly, richiedendo un adattamento potenzialmente significativo al codice.
+|-
+| style="text-align: center;"| '''EGo'''
+| style="text-align: left;"| Specifico per SGX. Esegue applicazioni GO in un enclave.
+| style="text-align: left;"| Richiede modifiche minimali al codice. Non supporta il multiprocessing e altre funzionalità di sistem.a
+|-
+| style="text-align: center;"| '''MysticOS'''
+| style="text-align: left;"| Sistema operativo leggero, basato su Open Enclave. Quindi si propone di essere ''hardware-agnostic''
+| style="text-align: left;"| Comporta molte limitazioni per la comunicazione con il sistema operativo.
+|}
+
+
+</div>
+<span id="sec:gramine"></span>
+== Gramine ==
+
+Gramine[[#ref-GramineDocs|[4]]] (ex Graphene) è un '''libOS''' che fornisce un’astrazione di alto livello in ambiente Linux per l’esecuzione di applicazioni isolate. Gramine è stato introdotto pre-SGX, ma è stato integrato con il concetto di enclave con '''Gramine-SGX'''. L’idea principale è quella di rendere applicazioni sicure senza modificare il codice sorgente, ma di effettuare un ''wrap'' di un eseguibile in un ambiente isolato utilizzando SGX. L’astrazione principale di Gramine è il ''picoprocesso''[[#ref-Tsai2017|[5]]]. Gramine inietta un componente detto '''PAL''' (''Platform Abstraction Layer'') che si occupa di intercettare le ''system call'' dell’applicazione e gestirle in modo sicuro garantendo che solo le operazioni autorizzate vengano eseguite.
+
+Di seguito, una panoramica di tutti gli elementi configurabili attraverso il '''''manifest file'''''.
+
+* '''''loader''''': Carica l’applicazione nell’enclave, gestendo l’eseguibile principale le variabili d’ambiente;
+* '''''libos''''': libOS emula un mini sistema operativo all’interno dell’enclave, permettendo all’applicazione intercettando le chiamate di sistema illegali all’interno dell’enclave ed implementa il protocollo previsto per comunicare tra mondo sicuro e non;
+* '''''sgx''''': contiene le impostazioni specifiche per l’enclave SGX, inclusa la modalità di debug, la dimensione dell’enclave e i file trusted;
+* '''''fs''''': definisce come i file e le directory sono montati all’interno dell’enclave, permettendo di specificare percorsi di file system virtuali e di configurare mount point cifrati per proteggere i dati sensibili;
+* '''''sys''''': gestisce le impostazioni di sistema per l’enclave, inclusa la dimensione dello stack e la configurazione di nomi di dominio runtime aggiuntivi;
+
+<span id="struttura-di-unapplicazione-con-gramine"></span>
+=== Struttura di un’applicazione con Gramine ===
+
+Come detto in [[#sec:classification|2.1]], Gramine non prevede nessuna modifica al codice sorgente, ma prevede una specifica statica di tutti gli elementi dell’enclave attraverso un '''''manifest'''''. Il manifest contiene informazioni per configurare il libOS e per configurare l’enclave fornendo opzioni come ''stack size'' e ''enclave size''. Inoltre, contiene una lista di tutti i ''file'' a cui può accedere l’enclave.
+
+Il manifest è un ''file'' in formato '''''toml'''''. Attraverso l’utility ''gramine-manifest'', il manifest può essere personalizzato usando un template ''jinja'' che supporta costrutti iterativi e condizionali e offre un meccanismo per iniettare variabili all’interno del file. In [[#lst:basic-manifest|[lst:basic-manifest]]], è riportato un esempio minimale di manifest file. L’entrypoint è un eseguibile chiamato ''program'' che deve essere necessariamente specificato come '''''trusted_file'''''. Se l’enclave accede ad un file non ''trusted'' si verificherà un errore.
+
+<pre class="Toml">libos.entrypoint = &quot;/program&quot;
+
+loader.env.LD_LIBRARY_PATH = &quot;/lib&quot;
+
+fs.mounts = [
+  { path = &quot;/lib&quot;, uri = &quot;file:{{ gramine.runtimedir() }}&quot; },
+  { path = &quot;/program&quot;, uri = &quot;file:program&quot; },
+]
+
+sgx.trusted_files = [
+  &quot;file:program&quot;,
+  &quot;file:{{ gramine.runtimedir() }}/&quot;,
+]</pre>
+A partire dal file processato (viene calcolato un ''hash'' (sha256) per tutti i file trusted), è possibile firmare il manifest con una chiave ''rsa'' a ''3072-bit'' ed eseguire l’enclave.
+
+Un manifest file più complicato è mostrato in [[#lst:advanced-manifest|[lst:advanced-manifest]]]. I ''mount point'' possono essere di diverso tipo. Ad esempio, ''tmpfs'' è un file system in memoria privato all’enclave cifrato; ''encrypted'' specifica che i file sono cifrati su disco e vengono acceduti da gramine in maniera trasparente. I mountpoint cifrati possono specificare una chiave inserendola nel manifest (altamente insicuro) o indicare il nome di una chiave ottenuta con l’attestazione remota e devono essere dedicati per enclave. Quando non specificato, il mountpoint è di tipo ''chroot'' che in maniera simile a come avviene in Linux permette di collegare file all’interno dell’ambiente dell’enclave. SGX consente la presenza di file non controllati condivisi con l’host con l’opzione ''sgx.allowed_files''.
+
+Infine, è possibile configurare opzioni per la dimensione dello stack e dell’enclave.
+
+<pre class="Toml">libos.entrypoint = &quot;/program&quot;
+
+loader.env.LD_LIBRARY_PATH = &quot;/lib&quot;
+
+sys.stack.size = &quot;2M&quot;
+sys.enable_extra_runtime_domain_names_conf = true
+
+sgx.debug = true
+sgx.edmm_enable = {{ 'true' if env.get('EDMM', '0') == '1' else 'false' }}
+sgx.enclave_size = &quot;1G&quot;
+
+fs.mounts = [
+  { path = &quot;/lib&quot;, uri = &quot;file:{{ gramine.runtimedir() }}&quot; },
+  { path = &quot;/program&quot;, uri = &quot;file:program&quot; },
+  { type = &quot;tmpfs&quot;, path = &quot;/tmp&quot; },
+  { type = &quot;encrypted&quot;, path = &quot;/encrypted/&quot;, uri = &quot;file:encrypted/&quot; },
+]
+fs.insecure__keys.default = &quot;&lt;hardcoded-key&gt;&quot;
+
+sgx.trusted_files = [
+  &quot;file:program&quot;,
+  &quot;file:{{ gramine.runtimedir() }}/&quot;,
+]
+
+sgx.allowed_files = [
+  &quot;file:shared/&quot;
+]</pre>
+<span id="remote-attestation"></span>
+=== Remote attestation ===
+
+Come approfondito in [[#sec:dcap-infrastructure-configuration|3.1.3]], la procedura con EPID è deprecata in favore della '''''Data Center Attestation Primitives'' (DCAP)'''. Gramine costruisce API di alto livello basate sulla remote attestation per creare facilmente tunnel TLS e fornire alle ''enclave'' segreti. Gramine espone ''3'' livelli di astrazione per fare utilizzare l’attestazione remota:
+
+* Low level interface: utilizza i pseudo files in Linux per eseguire le istruzioni SGX come EREPORT per generare quoting e report comunicando con le ''architectural enclave'';
+* RA-TLS: un insieme di due librerie utilizzate per aggiungere e verificare un SGX quote all’interno di un certificato X.509;
+* Secret Provisioning: un API di alto livello per generare un segreto condiviso tra due applicazioni;
+
+Per utilizzare l’attestazione, bisogna aggiungere '''''sgx.remote_attestation''''' nel manifest e impostare il tipo di attestazione utilizzata (al momento solo DCAP) come di seguito.
+
+<pre>sgx.remote_attestation = &quot;dcap&quot;</pre>
+<span id="low-level-interface"></span>
+==== Low-level interface ====
+
+L’enclave che utilizza la remote attestation può accedere ai file speciali in '''''/dev/attestation''''' (riportati di seguito).
+
+<div class="forest">
+
+for tree=<span> font=, grow’=0, child anchor=west, parent anchor=south, anchor=west, calign=first, edge path=<span> (!u.south west) +(7.5pt,0) |- node[fill,inner sep=1.25pt] (.child anchor); </span>, before typesetting nodes=<span> if n=1 <span>insert before=<span>[,phantom]</span></span> </span>, fit=band, before computing xy=<span>l=15pt</span>, </span> [dev/attestation/ [attestation_type] [user_report_data] [target_info] [my_target_info] [report] [quote] [keys [default] [&lt;key names&gt;] ] ]
+
+
+</div>
+Lo pseudo-file '''''report''''' contiene il report SGX generato a partire dal contenuto in '''''user_report_data''''' (contiene una stringa di questo inclusa nel report di ''64B'') e '''''target_info''''' (contiene ''512B'' di dati contenenti al target info). Il file '''''attestation_type''''' contiene il nome dello schema di attestazione in uso. Infine, l’SGX quote può essere letto da '''''/dev/attestation/quote'''''. Quando si comunica con i dispositivi virtuali, SGX utilizza le istruzioni privilegiate come EREPORT e permette di comunicare con le ''architecturale enclave'' (quali ''Quoting Enclave, Provisioning Certificate Enclave'') attraverso il '''''Architectural Enclave Service Manager'' (AESM)'''.
+
+Infine, nella cartella ''keys'' sono presenti le chiavi di crittografia ottenute da un servizio remoto come file binari di ''128-bit''.
+
+<span id="ra-tls"></span>
+==== RA-TLS ====
+
+Gramine utilizza le API di basso livello per fornire la possibilità di creare un tunnel TLS attestato con '''''RA-TLS''''': un insieme di due librerie che integra il protocollo TLS aggiungendo informazioni sul ''quote'' all’interno del certificato '''''X.509''''' ([[#fig:ra-tls-certificate|7]]). Le funzioni sono documentate in ''tools/sgx/ra_tls.h'' in [[#ref-gramine-repo|[6]]]
+
+* '''''ra_tls_attest.so''''': contiene la funzione ''ra_tls_create_key_and_crt_der()'' che serve ad aggiungere il quote in un certificato self-signed
+* '''''ra_tls_verify_dcap.so''''': contiene la funzione ''ra_tls_verify_callback_der()'' utilizzata dal client per verificare il certificato. Anche se è possibile specificare una callback per verificare la callback, la funzione confronta i dati ricevuti dal server con le variabili d’ambiente '''''RA_TLS_*''''' (MRENCLAVE, MRSIGNER, IS_PROV_ID);
+
+<div id="fig:ra-tls-certificate" class="figure">
+
+<div class="center">
+
+[[File:ra-tls-certificate.png]]
+
+</div>
+
+</div>
+<span id="secret-provisioning"></span>
+==== Secret provisioning ====
+
+La secret provisioning è un’API di alto livello fornita attraverso due librerie e permette a due applicazioni che eseguono in TEE di negoziare segreti condivisi utilizzando la RA-TLS. Il caso d’uso più semplice è quello di un’applicazione client eseguita in un’enclave che riceve da un server delle chiavi per decifrare delle immagini o un modello.
+
+Le librerie fornite sono:
+
+* '''''secret_prov_attest.so''''': libreria utilizzata dal client. Una volta terminato il provisioning, il segreto viene fornito nella variabile d’ambiente ''SECRET_PROVISIONING_SECRET_STRING''. Inoltre, la chiave viene salvata in ''/dev/attestation/keys/key-name'';
+* '''''secret_prov_verify_dcap.so''''': libreria utilizzata dal server (che non esegue in un enclave) che richiama RA-TLS per verificare la firma del client.
+
+<span id="openenclave"></span>
+== OpenEnclave ==
+
+Open enclave è un progetto che astrae il concetto di enclave proposto da Intel SGX in modo da renderlo ''hardware-agnostic'' con l’intenzione di portarlo su altre piattaforme come ARM Trustzone. Come riportato in [[#tab:tee-implementations|1]], Open Enclave richiede di suddividere il codice sorgente in ''enclave'' (trusted) e ''host'' (non trusted) con delle funzioni esplicite per l’esecuzione dell’enclave. In particolare, l’idea principale consiste nel generalizzare l’SDK proposta di Intel per SGX[[#ref-IntelSDK|[7]]].
+
+<span id="struttura-di-unapplicazione-con-open-enclave"></span>
+=== Struttura di un’applicazione con Open Enclave ===
+
+L’applicazione viene definita mediante un ''file'' scritto in '''''Enclave Definition Language'' (EDL)''' definito da Intel nell’SDK[[#ref-IntelSDK|[7]]]. Il linguaggio consente di importare altre definizioni e definisce una separazione netta tra parte sicura e parte non sicura. Come mostrato in [[#lst:base-edl|[lst:base-edl]]], è riportato un esempio in cui si definiscono ''2'' funzioni:
+
+* ''enclave_helloworld()'': funzione da eseguire nell’enclave;
+* ''host_helloworld()'': funzione host non sicura;
+
+L’enclave importa delle definizioni standard come le ''syscall'' in cui è implementato il meccanismo di comunicazione tra ''secure world'' e ''non secure world''. Inoltre, può essere anche importata una libreria condivisa tra le due parti.
+
+<pre>enclave {
+    from &quot;openenclave/edl/syscall.edl&quot; import *;
+    from &quot;platform.edl&quot; import *;
+     
+    include &quot;shared.h&quot;
+
+    trusted {
+        public void enclave_helloworld();
+    };
+
+    untrusted {
+        void host_helloworld();
+    };
+};</pre>
+Analogamente a come avviene per IntelSDK, il file viene usato per generare tutte le funzioni e le definizioni su cui strutturare l’applicazione con l’utility ''oeedger8r'', come mostrato in [[#sec:openenclave-helloworld|3.2.2]].
+
+<span id="attestazione-1"></span>
+=== Attestazione ===
+
+In OpenEnclave, l’attestazione remota è supportata solo per le macchine in Azure. Pertanto, gli esempi non includono la parte di comunicazione con i servizi remoti. Sebbene in modo più complicato, OpenEnclave crea un’astrazione simile a RA-TLS che può essere utilizzata per generare negoziare un segreto tra due enclave.
+
+<span id="sviluppo-di-unapplicazione-sicura"></span>
+= Sviluppo di un’applicazione sicura =
+
+In questa sezione, sono proposti ''3'' esempi di applicazioni con SGX riportati in [[#ref-example-repo|[8]]]:
+
+* '''''helloworld''''': applicazione di base che stampa a video un messaggio di benvenuto sia con Gramine che OpenEnclave;
+* '''''attestation''''': esplorazione delle diverse API offerte da Gramine per l’attestazione includendo la condivisione di un segreto tra due applicazioni;
+* '''''data sealing''''': applicazione che cifra i dati ''at rest'' (sul disco) utilizzando le chiavi generate dall’enclave;
+
+<span id="setup-di-laboratorio"></span>
+== Setup di laboratorio ==
+
+Gli esempi che seguono sono stati realizzati utilizzando il setup riportato in [[#tab:lab-spec|3]].Come indicato in , esistono ''2'' tipi di remote attestation: '''''Enhanced Privacy ID'' (EPID)''' e '''''Data Center Attestation Primitives'' (DCAP)'''. EPID incarica la QE di mettersi in contatto con l’'''''Intel Attestation Service'' (IAS)''' per avviare un algoritmo che consente di verificare la TCB. Purtroppo, questo meccanismo (più semplice da configurare) è stato deprecato e l’IAS sarà chiuso definitivamente in data ''2 aprile 2025''. L’unica modalità di fare attestazione remota è quella di configurare DCAP con uno sforzo infrastrutturale del cloud provider. Questa scelta è data anche dalla volontà di Intel di unificare i servizi di remote attestation tra SGX e TDX.
+
+<div id="tab:lab-spec">
+
+{| class="wikitable"
+|+ Caratteristiche tecniche macchina di laboratorio
+|-
+! style="text-align: left;"| Componente
+! style="text-align: left;"| Descrizione
+|-
+| style="text-align: left;"| '''CPU'''
+| style="text-align: left;"| i7-9700 CPU @ 3.00GHz, SGX1 e FLC
+|-
+| style="text-align: left;"| '''RAM'''
+| style="text-align: left;"| 24 GB, 2666 MT/s DDR4
+|-
+| style="text-align: left;"| '''OS'''
+| style="text-align: left;"| Ubuntu 24.04 LTS, kernel 6.8.0-41-generic
+|-
+| style="text-align: left;"| '''Platform'''
+| style="text-align: left;"| Dell Opitplex-7070
+|-
+| style="text-align: left;"| '''SGX SDK version'''
+| style="text-align: left;"| 2.25
+|-
+| style="text-align: left;"| '''SGX DCAP version'''
+| style="text-align: left;"| 1.22
+|-
+| style="text-align: left;"| '''Docker version'''
+| style="text-align: left;"| 27.3.1
+|-
+| style="text-align: left;"| '''Gramine Version'''
+| style="text-align: left;"| v1.8
+|-
+| style="text-align: left;"| '''OpenEnclave Version'''
+| style="text-align: left;"| v0.19.8
+|}
+
+
+</div>
+Sia Gramine che OpenEnclave necessitano di componenti specifiche per la versione di Ubuntu utilizzata. Per assicurare la riproducibilità degli esperimenti, è stato utilizzato Docker. A partire dal kernel 5.11, SGX con l’attestazione DCAP è incluso come driver in upstream e, pertanto, non necessita di installazioni. In particolare, sono forniti due dispositivi Linux che devono essere utilizzati all’interno dei container per accedere alle istruzioni SGX: '''''/dev/sgx_enclave''''' e '''''/dev/sgx_provision'''''. Il codice sorgente dei driver e dell’SDK è riportato in [[#ref-linux-sgx|[9]]].
+
+<span id="installazione-gramine"></span>
+=== Installazione Gramine ===
+
+Per usare correttamente le primitive DCAP, è necessario compilare da codice sorgente Gramine con il flag ''-Ddcap=enabled''. Per rendere riproducibile la procedura di compilazione, installazione e configurazione è stato sviluppato un Dockerfile (riportato in [[#lst:gramine-sdk-dockerfile|[lst:gramine-sdk-dockerfile]]]). È possibile creare un’immagine con:
+
+<pre> docker build -t gramine-dcap . </pre>
+<pre>FROM ubuntu:24.04
+
+WORKDIR /tmp
+
+# install dependencies
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  vim \
+  curl \
+  gnupg2 \
+  cmake \
+  psmisc \
+  make \
+  build-essential \
+  autoconf \ 
+  bison \
+  gawk \
+  nasm \
+  ninja-build \
+  pkg-config \
+  meson \
+  libprotobuf-c-dev \
+  protobuf-c-compiler \
+  libprotobuf-c-dev \
+  protobuf-c-compiler \
+  python3 \ 
+  python3-click \
+  python3-jinja2 \
+  python3-pip \
+  python3-pyelftools \
+  python3-pyelftools \
+  python3-tomli \
+  python3-tomli-w \
+  python3-voluptuous \
+  python3-cryptography \
+  python3-protobuf
+
+# configure intel sgx sdk
+RUN curl -fsSLo /usr/share/keyrings/intel-sgx-deb.asc https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key && \
+  echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-deb.asc] https://download.01.org/intel-sgx/sgx_repo/ubuntu noble main" \
+  | tee /etc/apt/sources.list.d/intel-sgx.list
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y libsgx-epid libsgx-quote-ex libsgx-dcap-ql
+
+RUN curl -O https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/distro/ubuntu24.04-server/sgx_linux_x64_sdk_2.25.100.3.bin
+RUN chmod +x sgx_linux_x64_sdk_2.25.100.3.bin
+RUN ./sgx_linux_x64_sdk_2.25.100.3.bin --prefix /opt/intel/
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  libsgx-enclave-common-dev \
+  libsgx-dcap-ql-dev \
+  libsgx-dcap-default-qpl-dev \
+  libsgx-dcap-quote-verify-dev
+
+# download and build gramine
+WORKDIR /workspace
+RUN curl -O -L https://github.com/gramineproject/gramine/archive/refs/tags/v1.8.tar.gz
+RUN tar xvf v1.8.tar.gz
+RUN mv gramine-1.8 /workspace/gramine 
+RUN rm v1.8.tar.gz
+
+WORKDIR /workspace/gramine
+RUN meson setup build/ \
+  --buildtype=release \
+  -Ddirect=enabled \ 
+  -Dsgx=enabled \
+  -Ddcap=enabled
+
+RUN ninja -C build/
+RUN ninja -C build/ install
+
+RUN echo "source /opt/intel/sgxsdk/environment" >> /root/.bashrc
+
+# avoid "Signing key does not exist" error
+RUN gramine-sgx-gen-private-key
+
+# configure AESM - Architectural Enclaves Service Manager
+RUN echo "#!/bin/sh \n \
+  set -e \n \
+  killall -q aesm_service || true \n \
+  AESM_PATH=/opt/intel/sgx-aesm-service/aesm LD_LIBRARY_PATH=/opt/intel/sgx-aesm-service/aesm exec /opt/intel/sgx-aesm-service/aesm/aesm_service --no-syslog \n\
+  " >> /restart_aesm.sh
+
+RUN mkdir -p /var/run/aesmd
+RUN chmod +x /restart_aesm.sh
+
+# add user to sgx_prv to access remote attestation primitives
+RUN groupadd sgx_prv
+RUN usermod -aG sgx_prv root
+
+ENTRYPOINT ["/bin/sh", "-c"]
+CMD ["/restart_aesm.sh ; exec /bin/bash"]</pre>
+<pre> docker run \
+  -it \
+  --network=host \
+  --device /dev/sgx_enclave \ 
+  --device /dev/sgx_provision \
+  gramin-dcap</pre>
+<span id="installazione-open-enclave"></span>
+=== Installazione Open Enclave ===
+
+OpenEnclave è supportato solo con Ubuntu 20.04 a causa di alcune dipendenze con OpenSSL. Per questo motivo, l’SDK è stata installata utilizzando un container ''Docker'' utilizzando il Dockerfile (creato a partire dalla documentazione [[#ref-openenclave|[10]]]) in [[#lst:openenclave-sdk-dockerfile|[lst:openenclave-sdk-dockerfile]]]. A partire da questo Dockerfile, può essere creata un’immagine con (supponenedo di essere nella stessa cartella del file):
+
+<pre> docker build -t openenclave-sdk .</pre>
+<pre>FROM ubuntu:20.04
+
+WORKDIR /workspace
+
+# install dependencies
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \ 
+  gnupg2 \
+  curl \
+  make \
+  build-essential
+
+RUN echo 'deb [arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main' | tee /etc/apt/sources.list.d/intel-sgx.list
+RUN curl https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -
+
+RUN echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-11 main" | tee /etc/apt/sources.list.d/llvm-toolchain-focal-11.list
+RUN curl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+
+RUN echo "deb [arch=amd64] https://packages.microsoft.com/ubuntu/20.04/prod focal main" | tee /etc/apt/sources.list.d/msprod.list
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+
+# install openenclave-sdk
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install clang-11 \
+  libssl-dev \
+  gdb \
+  libsgx-enclave-common \
+  libsgx-quote-ex \
+  libprotobuf17 \
+  libsgx-dcap-ql \
+  libsgx-dcap-ql-dev \
+  az-dcap-client \
+  open-enclave
+
+RUN echo "source /opt/openenclave/share/openenclave/openenclaverc" >> /root/.bashrc
+
+# download open-enclave-sdk for samples
+RUN curl -L -o /tmp/v0.19.8.tar.gz https://github.com/openenclave/openenclave/archive/refs/tags/v0.19.8.tar.gz
+
+RUN tar xvf /tmp/v0.19.8.tar.gz  
+RUN mv openenclave-0.19.8 openenclave
+
+# configure AESM - Architectural Enclaves Service Manager
+RUN echo "#!/bin/sh \n \
+  set -e \n \
+  killall -q aesm_service || true \n \
+  AESM_PATH=/opt/intel/sgx-aesm-service/aesm LD_LIBRARY_PATH=/opt/intel/sgx-aesm-service/aesm exec /opt/intel/sgx-aesm-service/aesm/aesm_service --no-syslog \n\
+  " >> /restart_aesm.sh
+
+RUN mkdir -p /var/run/aesmd
+RUN chmod +x /restart_aesm.sh
+
+# add user to sgx_prv to access remote attestation primitives
+RUN groupadd sgx_prv
+RUN usermod -aG sgx_prv root
+
+ENTRYPOINT ["/bin/sh", "-c"]
+CMD ["/restart_aesm.sh ; exec /bin/bash"]</pre>
+Creata l’immagine, è possibile avere un terminale interattivo all’interno di un container condividendo il codice sorgente dell’applicazione (supponendo di essere nella ''top-level directory'') del proprio progetto.
+
+<pre> docker run \
+  -it \
+  --network=host \
+  --device /dev/sgx_enclave \ 
+  --device /dev/sgx_provision \
+  openenclave-sdk \ </pre>
+<span id="sec:dcap-infrastructure-configuration"></span>
+=== Configurazione infrastruttura DCAP ===
+
+L’infrastruttura DCAP ([[#fig:dcap-infra|8]]) mira a minimizzare le interazioni con i servizi remoti di Intel concentrando la gestione dei certificati su un componente ''trusted'' detto '''''Provisioning Certificate Caching Service'' (PCCS)'''. Il PCCS è l’unico componente dell’infrastruttura che può interagire con i servizi di Intel (attraverso una API Key, [[#fig:intel-portal-registration|9]]) e può essere contattato direttamente dai quoting enclave delle singole macchine come un servizio HTTP. A partire dalla versione DCAP 1.22, Intel non offre più un’implementazione di riferimento di questo servizio, ma rimane comunque accessbile dalle release precedenti. Tutte le informazioni riportate sono state ottenute dai documenti e dal codice sorgente rilasciati da Intel[[#ref-sgx-dcap-docs|[11]]],[[#ref-sgx-dcap-repo|[12]]].
+
+<div id="fig:dcap-infra" class="figure">
+
+<div class="center">
+
+[[File:dcap-infra.png]]
+
+</div>
+
+</div>
+Le API Key possono essere ottenute registrando un account su questo [https://api.portal.trustedservices.intel.com portale].
+
+<div id="fig:intel-portal-registration" class="figure">
+
+<div class="figure">
+
+[[File:intel-portal-1.png]]
+
+</div>
+<div class="figure">
+
+[[File:intel-portal-2.png]]
+
+</div>
+<div class="figure">
+
+[[File:intel-portal-3.png]]
+
+</div>
+
+</div>
+<span id="configurazione-host"></span>
+==== Configurazione host ====
+
+Anche se si utilizzano ambienti containerizzati, bisogna configurare l’host con i permessi per accedere ai device Linux che si occupano di generare report. In particolare, come mostrato di seuito, bisogna configurare i permessi sui driver di '''''sgx_enclave''''' '''''sgx_provision''''' (implementati già nel kernel Linux) conferendo l’accesso in lettura e scrittura per gli utenti appartenenti al gruppo '''''sgx_prv'''''. Per fare questo, aggiungere nel file '''/etc/udev/rules.d/90-sgx-v40.rules''' le seguenti espressioni:
+
+<pre>SUBSYSTEM==&quot;misc&quot;,KERNEL==&quot;sgx_enclave&quot;,MODE=&quot;0666&quot;,SYMLINK+=&quot;sgx/enclave&quot;
+SUBSYSTEM==&quot;misc&quot;,KERNEL==&quot;sgx_provision&quot;,GROUP=&quot;sgx_prv&quot;,MODE=&quot;0660&quot;,SYMLINK+=&quot;sgx/provision&quot;</pre>
+e ricaricare le regole con:
+
+<pre>udevadm trigger</pre>
+Dopo queste modifiche, bisogna aggiungere qualsiasi utente (incluso root in un container Docker) al gruppo ''sgx_prv''. Se si utilizzano i Dockerfile mostrati in precedenza, l’utente root è già stato configurato correttamente.
+
+<span id="installazione-pccs"></span>
+==== Installazione PCCS ====
+
+Intel specifica l’architettura del PCCS in e fino alla versione 1.21 DCAP fornisce<br />
+un’implementazione di riferimento. Di seguito, si riporta la procedura di installazione e configurazione per quella implementazione. Il PCCS è un’applicazione web scritta in Javascript e può essere trovata nel path '''''QuoteGeneration/pccs''''' della repository nella versione 1.21. Prima di installare, bisogna ottenere delle API Key dal servizio Intel creando un account seguendo questa guida [[#ref-quickstart-dcap|[13]]]. Per rendere riproducibile la compilazione di questo componente, è stato creato il Dockerfile in [[#lst:pccs-dockerfile|[lst:pccs-dockerfile]]] con cui creare un’immagine:
+
+<pre>docker build -t pccs . </pre>
+<pre>FROM ubuntu:24.04 AS build
+WORKDIR /tmp
+
+# dependencies
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  git \
+  curl \
+  python-is-python3 \
+  python3 \
+  python3-pip \
+  python3-setuptools \
+  openssl \
+  libssl-dev \
+  build-essential
+
+# configure intel sgx sdk
+RUN curl -fsSLo /usr/share/keyrings/intel-sgx-deb.asc https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key && \
+  echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-deb.asc] https://download.01.org/intel-sgx/sgx_repo/ubuntu noble main" \
+  | tee /etc/apt/sources.list.d/intel-sgx.list
+
+# install sgx sdk
+RUN curl -O https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/distro/ubuntu24.04-server/sgx_linux_x64_sdk_2.25.100.3.bin
+RUN chmod +x sgx_linux_x64_sdk_2.25.100.3.bin
+RUN ./sgx_linux_x64_sdk_2.25.100.3.bin --prefix /opt/intel/
+
+# get source code
+RUN git clone --recurse-submodules --depth=1 --branch DCAP_1.21 https://github.com/intel/SGXDataCenterAttestationPrimitives dcap
+
+# build PCKCertSelection
+WORKDIR /tmp/dcap/tools/PCKCertSelection
+
+RUN . /opt/intel/sgxsdk/environment && \
+  make && \
+  mkdir /tmp/dcap/QuoteGeneration/pccs/lib && \
+  cp /tmp/dcap/tools/PCKCertSelection/out/libPCKCertSelection.so /tmp/dcap/QuoteGeneration/pccs/lib
+
+RUN RUN curl -sL https://deb.nodesource.com/setup_21.5 | bash -
+RUN DEBIAN_FRONTEND=noninteractive apt-get -y install nodejs npm
+
+WORKDIR /tmp/dcap/QuoteGeneration/pccs
+
+RUN npm install
+
+FROM node:21.5
+WORKDIR /app
+
+COPY --from=build /tmp/dcap/QuoteGeneration/pccs  .
+
+ENTRYPOINT [ "node", "pccs_server.js" ]</pre>
+Il PCCS non è pensato per essere eseguito in un enclave, ma è una normale applicazione che espone delle API attraverso un tunnel TLS. Per eseguire un container con PCCS, bisogna creare una coppia di chiavi pubblica e privata da cui si genera un certificato:
+
+<pre>openssl genrsa -out private.pem 2048
+openssl req -new -key private.pem -out csr.pem
+openssl x509 -req -days 365 -in csr.pem -signkey private.pem -out file.crt</pre>
+Inoltre, bisogna creare un file di configurazione in formato json simile a quello mostrato in [[#lst:pccs-config|[lst:pccs-config]]]. Nell’esempio, viene utilizzato un database SQLite.
+
+<pre class="toml">{
+  &quot;HTTPS_PORT&quot;: 8081,
+  &quot;hosts&quot;: &quot;0.0.0.0&quot;,
+  &quot;uri&quot;: &quot;https://api.trustedservices.intel.com/sgx/certification/v4/&quot;,
+  &quot;ApiKey&quot;: &quot;&quot;,
+  &quot;proxy&quot;: &quot;&quot;,
+  &quot;RefreshSchedule&quot;: &quot;0 0 1 * * *&quot;,
+  &quot;UserTokenHash&quot;: &quot;&quot;,
+  &quot;AdminTokenHash&quot;: &quot;&quot;,
+  &quot;CachingFillMode&quot;: &quot;LAZY&quot;,
+  &quot;OPENSSL_FIPS_MODE&quot;: false,
+  &quot;LogLevel&quot;: &quot;info&quot;,
+  &quot;DB_CONFIG&quot;: &quot;sqlite&quot;,
+  &quot;sqlite&quot;: {
+    &quot;database&quot;: &quot;database&quot;,
+    &quot;username&quot;: &quot;&quot;,
+    &quot;password&quot;: &quot;&quot;,
+    &quot;options&quot;: {
+      &quot;host&quot;: &quot;localhost&quot;,
+      &quot;dialect&quot;: &quot;sqlite&quot;,
+      &quot;pool&quot;: {
+        &quot;max&quot;: 5,
+        &quot;min&quot;: 0,
+        &quot;acquire&quot;: 30000,
+        &quot;idle&quot;: 10000
+      },
+      &quot;define&quot;: {
+        &quot;freezeTableName&quot;: true
+      },
+      &quot;logging&quot;: false,
+      &quot;storage&quot;: &quot;pckcache.db&quot;
+    }
+  }
+}</pre>
+Bisogna inserire in ''ApiKey'' una delle due chiavi ricavate dalla piattaforma intel. Per '''''UserTokenHash''''' e '''''AdminTokenHash''''', bisogna salvare l’hash con ''sha512'' sostituendo le effettive password per nel seguente snippet:
+
+<pre>echo -n &quot;user_password&quot; | sha512sum | tr -d '[:space:]-'
+echo -n &quot;admin_password&quot; | sha512sum | tr -d '[:space:]-'</pre>
+Infine, è possibile eseguire l’applicazione (per semplificare le attività di deploy tutti i container eseguiti usano la rete dell’host):
+
+<pre>docker run \ 
+  -d \
+  --network=host \
+  -v $(pwd)/&lt;path-to-config-file&gt;:/app/config/default.json \
+  -v $(pwd)/&lt;path-to-certs-dir&gt;:/app/ssl_key/ \ 
+  pccs</pre>
+<span id="configurazione-aesm-service"></span>
+==== Configurazione AESM service ====
+
+Per usare correttamente, la remote attestation bisogna configurare ed utilizzare le '''''Architectural Enclave'' (AE)''' (come la '''''Quoting Enclave'' (QE)''', '''''Quoting Verification Enclave'' (QVE)'''). Le ''architectural enclave'' sono enclave privilegiate fornite e firmate da Intel che devono essere gestite da attraverso l’'''''Architectural Enclave Service Manager'' (AESM)'''. AESM è un’applicazione che espone i servizi delle architectural enclave attraverso una '''''unix socket'''''. Queste enclave possono comunicare con il PCCS e vengono configurate attraverso il file '''''/etc/sgx_default_qcnl.conf''''' (riportato di seguito). Se si vuole comunicare con un PCCS che usa certificati ''self-signed'', bisogna impostare il flag '''''use_secure_cert''''' a ''false''. AESM è installato sia nelle immagini di openenclave che gramine.
+
+<pre class="toml">{
+  // *** ATTENTION : This file is in JSON format so the keys are case sensitive. Don't change them.
+
+  //PCCS server address
+  &quot;pccs_url&quot;: &quot;https://localhost:8081/sgx/certification/v4/&quot;
+
+  // To accept insecure HTTPS certificate, set this option to false
+  ,&quot;use_secure_cert&quot;: true
+
+  // You can use the Intel PCS or another PCCS to get quote verification collateral.  Retrieval of PCK
+  // Certificates will always use the PCCS described in pccs_url.  When collateral_service is not defined, both
+  // PCK Certs and verification collateral will be retrieved using pccs_url
+  //,&quot;collateral_service&quot;: &quot;https://api.trustedservices.intel.com/sgx/certification/v4/&quot;
+
+  // Type of update to TCB Info. Possible value: early, standard. Default is standard.
+  // early indicates an early access to updated TCB Info provided as part of a TCB recovery event
+  // (commonly the day of public disclosure of the items in scope)
+  // standard indicates standard access to updated TCB Info provided as part of a TCB recovery event
+  // (commonly approximately 6 weeks after public disclosure of the items in scope)
+  //, &quot;tcb_update_type&quot; : &quot;standard&quot;
+
+  // If you use a PCCS service to get the quote verification collateral, you can specify which PCCS API version is to be used.
+  // The legacy 3.0 API will return CRLs in HEX encoded DER format and the sgx_ql_qve_collateral_t.version will be set to 3.0, while
+  // the new 3.1 API will return raw DER format and the sgx_ql_qve_collateral_t.version will be set to 3.1. The pccs_api_version
+  // setting is ignored if collateral_service is set to the Intel PCS. In this case, the pccs_api_version is forced to be 3.1
+  // internally.  Currently, only values of 3.0 and 3.1 are valid.  Note, if you set this to 3.1, the PCCS use to retrieve
+  // verification collateral must support the new 3.1 APIs.
+  //,&quot;pccs_api_version&quot;: &quot;3.1&quot;
+
+  // Maximum retry times for QCNL. If RETRY is not defined or set to 0, no retry will be performed.
+  // It will first wait one second and then for all forthcoming retries it will double the waiting time.
+  // By using retry_delay you disable this exponential backoff algorithm
+  ,&quot;retry_times&quot;: 6
+
+  // Sleep this amount of seconds before each retry when a transfer has failed with a transient error
+  ,&quot;retry_delay&quot;: 10
+
+  // If local_pck_url is defined, the QCNL will try to retrieve PCK cert chain from local_pck_url first,
+  // and failover to pccs_url as in legacy mode.
+  //,&quot;local_pck_url&quot;: &quot;http://localhost:8081/sgx/certification/v4/&quot;
+
+  // If local_pck_url is not defined, set pck_cache_expire_hours to a none-zero value will enable local cache.
+  // The PCK certificates will be cached in memory and then to the disk drive.
+  // The local cache files will be sequentially searched in the following directories until located in one of them:
+  // Linux : $AZDCAP_CACHE, $XDG_CACHE_HOME, $HOME, $TMPDIR, /tmp/
+  // Windows : $AZDCAP_CACHE, $LOCALAPPDATA\..\..\LocalLow
+  // Please be aware that the environment variable pertains to the account executing the process that loads QPL,
+  // not the account used to log in. For instance, if QPL is loaded by QGS, then those environment variables relate to
+  // the &quot;qgsd&quot; account, which is the account that runs the QGS daemon.
+  // You can remove the local cache files either manually or by using the QPL API, sgx_qpl_clear_cache. If you opt to
+  // delete them manually, navigate to the aforementioned caching directories, find the folder named .dcap-qcnl, and delete it.
+  // Restart the service after all cache folders were deleted. The same method applies to &quot;verify_collateral_cache_expire_hours&quot;
+  ,&quot;pck_cache_expire_hours&quot;: 168
+
+  // To set cache expire time for quote verification collateral in hours
+  // See the above comment for pck_cache_expire_hours for more information on the local cache.
+  ,&quot;verify_collateral_cache_expire_hours&quot;: 168
+
+  // When the &quot;local_cache_only&quot; parameter is set to true, the QPL/QCNL will exclusively use PCK certificates
+  // from local cache files and will not request any PCK certificates from service providers, whether local or remote.
+  // To ensure that the PCK cache is available for use, an administrator must pre-populate the cache folders with
+  // the appropriate cache files. To generate these cache files for specific platforms, the administrator can use
+  // the PCCS admin tool. Once the cache files are generated, the administrator must distribute them to each platform
+  // that requires provisioning.
+  ,&quot;local_cache_only&quot;: false
+
+  // You can add custom request headers and parameters to the get certificate API.
+  // But the default PCCS implementation just ignores them.
+  //,&quot;custom_request_options&quot; : {
+  //  &quot;get_cert&quot; : {
+  //    &quot;headers&quot;: {
+  //      &quot;head1&quot;: &quot;value1&quot;
+  //    },
+  //    &quot;params&quot;: {
+  //      &quot;param1&quot;: &quot;value1&quot;,
+  //      &quot;param2&quot;: &quot;value2&quot;
+  //    }
+  //  }
+  //}
+}</pre>
+<span id="applicazione-helloworld"></span>
+== Applicazione Helloworld ==
+
+In questo esempio, viene illustrato un programma minimale sia con Gramine che con Open Enclave con lo scopo di evidenziarne le differenze. Lo scopo del programma è quello di stampare a video un messaggio di benvenuto.
+
+<span id="gramine"></span>
+=== Gramine ===
+
+Come detto in [[#sec:gramine|2.2]], il codice sorgente dell’applicazione rimane invariato, ma bisogna focalizzarsi in sul manifest file, riportato di seguito.
+
+<pre class="Toml"># Copyright (C) 2023 Gramine contributors
+# SPDX-License-Identifier: BSD-3-Clause
+
+# Hello World manifest file example
+
+libos.entrypoint = &quot;/helloworld&quot;
+loader.log_level = &quot;{{ log_level }}&quot;
+
+loader.env.LD_LIBRARY_PATH = &quot;/lib&quot;
+
+fs.mounts = [
+  { path = &quot;/lib&quot;, uri = &quot;file:{{ gramine.runtimedir() }}&quot; },
+  { path = &quot;/helloworld&quot;, uri = &quot;file:helloworld&quot; },
+]
+
+sgx.debug = true
+sgx.edmm_enable = {{ 'true' if env.get('EDMM', '0') == '1' else 'false' }}
+
+sgx.trusted_files = [
+  &quot;file:helloworld&quot;,
+  &quot;file:{{ gramine.runtimedir() }}/&quot;,
+]</pre>
+La struttura della directory è riportata di seguito. La '''''toolchain''''' Gramine riconosce l’applicazione dal nome del file manifest dato in ingresso.
+
+<div class="forest">
+
+for tree=<span> font=, grow’=0, child anchor=west, parent anchor=south, anchor=west, calign=first, edge path=<span> (!u.south west) +(7.5pt,0) |- node[fill,inner sep=1.25pt] (.child anchor); </span>, before typesetting nodes=<span> if n=1 <span>insert before=<span>[,phantom]</span></span> </span>, fit=band, before computing xy=<span>l=15pt</span>, </span> [app/ [helloworld.c] [Makefile] [helloworld.manifest] ] ]
+
+
+</div>
+Il file in [[#lst:helloworld-manifest|[lst:helloworld-manifest]]] deve essere preprocessato e firmato con ''sgx''. Questa procedura crea un file chiamato ''helloworld.manifest'' e la sua firma in ''helloworld.sign''. In [[#lst:helloworld-makefile|[lst:helloworld-makefile]]], è riportato il ''Makefile'' utilizzato per la compilazione dell’applicazione ed è possibile osservare che la generazione dell’eseguibile non dipende dalla parte. La regola per generare ''helloworld.manifest'' utilizza ''gramine-manifest'' che effettua un ''preprocessing'' di ''helloworld.manifest.template''. Questo comando può definire variabili all’interno del manifest che poi saranno utilizzate con la sintassi di ''jinja''. Ad esempio, ''-Dlog_level'' definisce la variabile ''{log_level}''.
+
+<pre>CFLAGS=-Wall -Wextra -O0
+GRAMINE_LOG_LEVEL?=debug
+
+run: build
+	gramine-sgx helloworld	
+
+.PHONY: build
+build: helloworld.manifest.sgx helloworld.sig
+
+helloworld.sig helloworld.manifest.sgx &: helloworld.manifest
+	gramine-sgx-sign \
+		--manifest $< \
+		--output $<.sgx
+	gramine-manifest-check $<.sgx
+
+helloworld.manifest: helloworld.manifest.template helloworld
+	gramine-manifest \
+		-Dlog_level=$(GRAMINE_LOG_LEVEL) \
+		$< $@
+	gramine-manifest-check $@
+
+helloworld: helloworld.o
+
+helloworld.o: helloworld.c
+
+.PHONY: check
+check: all
+	$(GRAMINE) helloworld > OUTPUT
+	echo "Hello, world" | diff OUTPUT -
+	@echo "[ Success ]"
+
+.PHONY: clean
+clean:
+	$(RM) *.sig *.manifest.sgx *.manifest helloworld.o helloworld OUTPUT
+
+.PHONY: distclean
+distclean: clean</pre>
+Con ''gramine-sgx-sign'' viene calcolata una firma dell’enclave cifrata con una chiave ottenuta eseguendo il comando ''gramine-sgx-gen-private-key'' (che genera una chiave rsa a 3072 bit). In questa fase, il codice dell’enclave viene misurato insieme ad altri metadati per generare la ''SIGSTRUCT''. La genuinità di questa firma può essere verificata attraverso la ''remote attestation''. Successivamente, l’applicazione può essere eseguita con privilegi di amministratore usando il comando:
+
+<pre>  $ gramine-sgx helloworld</pre>
+Dove ''helloworld'' è il nome del manifest file privato delle estensioni. Analizzando il log della compilazione, Gramine mostra tutte le misure che effettua per ogni pagina di memoria. All’esecuzione, l’enclave viene creata ([[#fig:gramine-helloworld-create-enclave|10]], i campi ''attr'' sono relativi alla struttura ''SECS'', mentre con ''size'' viene specificata quella riportata nel ''manifest'') e la sua memoria popolata pagina per pagina configurando i permessi di lettura/scrittura/esecuzione (RWX)([[#fig:gramine-helloworld-create-enclave-page-mapping|11]]).
+
+<div id="fig:gramine-helloworld-create-enclave" class="figure">
+
+<div class="center">
+
+[[File:gramine-helloworld-create-enclave.png]]
+
+</div>
+
+</div>
+<div id="fig:gramine-helloworld-create-enclave-page-mapping" class="figure">
+
+<div class="center">
+
+[[File:gramine-helloworld-create-enclave-page-mapping.png]]
+
+</div>
+
+</div>
+Dopo aver caricato le pagine, viene inizializzato il ''libOs'' che monta i file system ed esegue l’entrypoint.
+
+<span id="sec:openenclave-helloworld"></span>
+=== OpenEnclave ===
+
+L’applicazione base con Open Enclave risulta più complicata. Innanzitutto, bisogna specificare un file EDL come quello in [[#lst:openenclave-helloworld-edl|[lst:openenclave-helloworld-edl]]]. In particolare, questo definisce due funzioni (''host_helloworld e ''enclave_helloworld'''') che l’enclave può eseguire in due differenti modalità e che devono essere implementate nell’applicazione finale.
+
+<pre>// Copyright (c) Open Enclave SDK contributors.
+// Licensed under the MIT License.
+
+enclave {
+    from &quot;openenclave/edl/syscall.edl&quot; import *;
+    from &quot;platform.edl&quot; import *;
+
+    trusted {
+        public void enclave_helloworld();
+    };
+
+    untrusted {
+        void host_helloworld();
+    };
+};
+
+</pre>
+Con OpenEnclave, c’è una separazione netta tra parte trusted e untrusted rispecchiata dalla struttura del progetto.
+
+<div class="forest">
+
+for tree=<span> font=, grow’=0, child anchor=west, parent anchor=south, anchor=west, calign=first, edge path=<span> (!u.south west) +(7.5pt,0) |- node[fill,inner sep=1.25pt] (.child anchor); </span>, before typesetting nodes=<span> if n=1 <span>insert before=<span>[,phantom]</span></span> </span>, fit=band, before computing xy=<span>l=15pt</span>, </span> [app/ [host [host.c] [Makefile] ] [enclave [enc.c] [Makefile] ] [Makefile] [helloworld.edl] ] ]
+
+
+</div>
+Prima di sviluppare l’applicazione, è necessario creare le definizioni di tipi e importare le funzioni principali di OpenEnclave. Principalmente, queste definizioni servono a facilitare la gestione del ciclo di vita dell’enclave ([[#fig:enclave-lifecycle|2]]), gestendo le ECALL e OCALL con opportune EENTER e EEXIT. Questo può essere fatto con ''oeedger8r'' che prende in ingresso il file ''edl'' e si occupa di definire i tipi giusti in base al ''backend'' specificato. Ad esempio, per generare il codice relativo all’enclave bisogna eseguire (stando nella cartella ''enclave''):
+
+<pre>  oeedger8r --search-path /opt/openenclave/include 
+    --search-path /opt/openenclave/include/openenclave/edl/sgx
+    ../helloworld.edl --trusted</pre>
+Per generare la parte untrusted, bisogna eseguire (stando nella cartella ''untrusted''):
+
+<pre>  oeedger8r --search-path /opt/openenclave/include 
+    --search-path /opt/openenclave/include/openenclave/edl/sgx
+    ../helloworld.edl --untrusted</pre>
+Il Makefile principale si limita a richiamare gli altri file nelle rispettive sezioni dell’applicazione.
+
+<pre>.PHONY: all build clean run 
+
+OE_CRYPTO_LIB := mbedtls
+export OE_CRYPTO_LIB
+
+all: build
+
+build:
+	$(MAKE) -C enclave
+	$(MAKE) -C host
+
+clean:
+	$(MAKE) -C enclave clean
+	$(MAKE) -C host clean
+
+run:
+	host/helloworld_host
+</pre>
+<span id="applicazione-host"></span>
+==== Applicazione host ====
+
+L’applicazione host gestisce il ciclo di vita dell’enclave dalla sua creazione alla distruzione. Il codice (in cui sono stati omessi i controlli degli errori per brevità) è riportato in [[#lst:openenclave-helloworld-host|[lst:openenclave-helloworld-host]]]. Questo non cambia molto rispetto ad un’applicazione classica in ''C''. La funzione ''oe_create_helloworld_enclave'' crea l’enclave e prende come primo parametro il path per l’enclave firmata definito nella macro ''ENCLAVE_SIGNED_PATH''. Alla creazione dell’enclave viene verificata la firma e viene popolata la EPC. La funzione ''enclave_helloworld'' è una funzione nella parte trusted che esegue nel TEE (una ECALL) alla quale corrisponde un cambio di contesto del processore. Infine, con ''oe_terminate_enclave'', si elimina l’enclave.
+
+<pre>// Copyright (c) Open Enclave SDK contributors.
+// Licensed under the MIT License.
+
+#include <openenclave/host.h>
+#include <stdio.h>
+
+// Include the untrusted helloworld header that is generated
+// during the build. This file is generated by calling the
+// sdk tool oeedger8r against the helloworld.edl file.
+#include "helloworld_u.h"
+
+#define ENCLAVE_SIGNED_PATH "./enclave/enclave.signed"
+
+// This is the function that the enclave will call back into to
+// print a message.
+void host_helloworld()
+{
+    fprintf(stdout, "Enclave called into host to print: Hello World!\n");
+}
+
+int main()
+{
+    oe_result_t result;
+    int ret = 1;
+    oe_enclave_t* enclave = NULL;
+
+    uint32_t flags = OE_ENCLAVE_FLAG_DEBUG;
+
+    // Create the enclave
+    result = oe_create_helloworld_enclave(
+        ENCLAVE_SIGNED_PATH, OE_ENCLAVE_TYPE_AUTO, flags, NULL, 0, &enclave);
+    if (result != OE_OK)
+    {
+        fprintf(
+            stderr,
+            "oe_create_helloworld_enclave(): result=%u (%s)\n",
+            result,
+            oe_result_str(result));
+        goto exit;
+    }
+
+    // Call into the enclave
+    result = enclave_helloworld(enclave);
+    if (result != OE_OK)
+    {
+        fprintf(
+            stderr,
+            "calling into enclave_helloworld failed: result=%u (%s)\n",
+            result,
+            oe_result_str(result));
+        goto exit;
+    }
+
+    ret = 0;
+
+exit:
+    // Clean up the enclave if we created one
+    if (enclave)
+        oe_terminate_enclave(enclave);
+
+    return ret;
+}</pre>
+Questo componente è dotato di un Makefile, riportato in [[#lst:openenclave-helloworld-host-makefile|[lst:openenclave-helloworld-host-makefile]]], in cui si compila normalmente l’applicazione dopo aver generato i flag del compilatore a partire da ''open-enclave''. Il compilatore utilizzato è ''clang'', ma sono supportati anche '''''cc''''' e '''''gcc'''''. Per cambiare compilatore, bisogna modificare il valore della variabile ''CC'' per ogni Makefile.
+
+<pre>.PHONY: all build clean run 
+
+OE_CRYPTO_LIB := mbedtls
+export OE_CRYPTO_LIB
+
+all: build
+
+build:
+	$(MAKE) -C enclave
+	$(MAKE) -C host
+
+clean:
+	$(MAKE) -C enclave clean
+	$(MAKE) -C host clean
+
+run:
+	host/helloworld_host
+</pre>
+<span id="applicazione-enclave"></span>
+==== Applicazione enclave ====
+
+Per compilare l’enclave, bisogna seguire i seguenti passi racchiusi nel Makefile in [[#lst:openenclave-helloworld-enclave-makefile|[lst:openenclave-helloworld-enclave-makefile]]].
+
+* '''''compilare l’applicazione''''': procedimento standard che avviene specificato nella regola ''build''. Avviene analogamente alla parte host;
+* '''''generare una coppia di chiavi''''': con la regola ''keys'' si genera una chiave privata a ''3072-''bit da cui se ne deriva una pubblica;
+* '''''firmare l’applicazione''''': con ''oesign'' nella regola '''sign''', l’applicazione viene firmata con la chiave privata generata in precedenza e un file di configurazione riportato in [[#lst:openenclave-helloworld-enclave-conf|[lst:openenclave-helloworld-enclave-conf]]];
+
+Il file di configurazione definisce alcuni parametri di configurazione per l’enclave ed è un semplice file di testo:
+
+* '''''debug''''': saranno stampate informazioni aggiuntive;
+* '''''NumHeapPages''''': massimo numero di pagine nell’heap per ogni thread nell’enclave;
+* '''''NumStackPages''''': massimo numero di pagine nello stack per ogni thread nell’enclave;
+* '''''NumTCS''''': massimo numero di '''''Thread Control Structure''''' consentito nell’enclave;
+* '''''ProductID''''': definisce un identificativo univoco per l’applicazione in modo tale da poter distinguire due programmi firmati dallo stesso ''MRSIGNER'';
+* '''''SecurityVersion''''': protegge contro gli attacchi di tipo '''''rollback''''';
+
+<pre class="Ini">Debug=1
+NumHeapPages=1024
+NumStackPages=1024
+NumTCS=1
+ProductID=1
+SecurityVersion=1</pre>
+L’applicazione utilizza una versione minimale tls chiamata '''''mbed-tls''''', ma potrebbe essere usata '''openssl''' assegnando alla variabile ''CFLAGS'' il valore ottenuto dal comando:
+
+<pre>pkg-config oeenclave-clang --variable=openssl_3flags </pre>
+<pre># Copyright (c) Open Enclave SDK contributors.
+# Licensed under the MIT License.
+
+COMPILER=clang
+CC=$(COMPILER)-11
+
+CRYPTO_LDFLAGS := $(shell pkg-config oeenclave-$(COMPILER) --variable=${OE_CRYPTO_LIB}libs)
+
+CFLAGS=$(shell pkg-config oeenclave-$(COMPILER) --cflags)
+LDFLAGS=$(shell pkg-config oeenclave-$(COMPILER) --libs)
+INCDIR=$(shell pkg-config oeenclave-$(COMPILER) --variable=includedir)
+
+all:
+	$(MAKE) build
+	$(MAKE) keys
+	$(MAKE) sign
+
+build:
+	@ echo "Compilers used: $(CC), $(CXX)"
+	oeedger8r ../helloworld.edl --trusted \
+		--search-path $(INCDIR) \
+		--search-path $(INCDIR)/openenclave/edl/sgx
+	$(CC) -g -c $(CFLAGS) -DOE_API_VERSION=2 enc.c -o enc.o
+	$(CC) -g -c $(CFLAGS) -DOE_API_VERSION=2 helloworld_t.c -o helloworld_t.o
+	$(CC) -o enclave helloworld_t.o enc.o $(LDFLAGS) $(CRYPTO_LDFLAGS)
+
+sign:
+	oesign sign -e enclave -c helloworld.conf -k private.pem
+
+clean:
+	rm -f enc.o enclave enclave.signed private.pem public.pem helloworld_t.o helloworld_t.h helloworld_t.c helloworld_args.h
+
+keys:
+	openssl genrsa -out private.pem -3 3072
+	openssl rsa -in private.pem -pubout -out public.pem</pre>
+Il codice ''enc.c'', riportato [[#lst:openenclave-helloworld-enclave|[lst:openenclave-helloworld-enclave]]], non contiene un ''main'', ma solo la funzione da eseguire nel TEE. La funzione ''host_helloworld'' è una OCALL e comporta un’uscita dall’enclave per entrare nella parte untrusted ed è definita nel parte ''host''.
+
+<pre>// Copyright (c) Open Enclave SDK contributors.
+// Licensed under the MIT License.
+
+#include <stdio.h>
+
+// Include the trusted helloworld header that is generated
+// during the build. This file is generated by calling the
+// sdk tool oeedger8r against the helloworld.edl file.
+#include "helloworld_t.h"
+
+// This is the function that the host calls. It prints
+// a message in the enclave before calling back out to
+// the host to print a message from there too.
+void enclave_helloworld()
+{
+    // Print a message from the enclave. Note that this
+    // does not directly call fprintf, but calls into the
+    // host and calls fprintf from there. This is because
+    // the fprintf function is not part of the enclave
+    // as it requires support from the kernel.
+    fprintf(stdout, "Hello world from the enclave\n");
+
+    // Call back into the host
+    oe_result_t result = host_helloworld();
+    if (result != OE_OK)
+    {
+        fprintf(
+            stderr,
+            "Call to host_helloworld failed: result=%u (%s)\n",
+            result,
+            oe_result_str(result));
+    }
+}</pre>
+<span id="applicazione-attestation"></span>
+== Applicazione Attestation ==
+
+Gli esempi che interagiscono con la parte di attestazione remota. Con Gramine, vengono esplorate le API di ''secret provisioning'' oltre a quelle di generazione di ''report'' e ''quote''.
+
+<span id="gramine-1"></span>
+=== Gramine ===
+
+<span id="low-level-interface-1"></span>
+==== Low-level interface ====
+
+In [[#lst:low-level-attestation|[lst:low-level-attestation]]], è riportato un’applicazione demo in Python che interagisce con i file descritti in precedenza generando e stampando a video report e quote (la decodifica è stata fatta in base ai documenti in [[#ref-IntelSDK|[7]]]).
+
+<pre>#!/usr/bin/env python3
+
+import os
+import sys
+
+if not os.path.exists("/dev/attestation/quote"):
+    print(
+        "Cannot find `/dev/attestation/quote`; "
+        "are you running under SGX, with remote attestation enabled?"
+    )
+    sys.exit(1)
+
+with open("/dev/attestation/attestation_type") as f:
+    print(f"Detected attestation type: {f.read()}")
+
+with open("/dev/attestation/user_report_data", "wb") as f:
+    f.write(b"\0" * 64)
+
+with open("/dev/attestation/quote", "rb") as f:
+    quote = f.read()
+
+print(f"Extracted SGX quote with size = {len(quote)} and the following fields:")
+print(f"  ATTRIBUTES.FLAGS: {quote[96:104].hex()}  [ Debug bit: {quote[96] & 2 > 0} ]")
+print(f"  ATTRIBUTES.XFRM:  {quote[104:112].hex()}")
+print(f"  MRENCLAVE:        {quote[112:144].hex()}")
+print(f"  MRSIGNER:         {quote[176:208].hex()}")
+print(f"  ISVPRODID:        {quote[304:306].hex()}")
+print(f"  ISVSVN:           {quote[306:308].hex()}")
+print(f"  REPORTDATA:       {quote[368:400].hex()}")
+print(f"                    {quote[400:432].hex()}")
+
+if not os.path.exists("/dev/attestation/report"):
+    print("Cannot find `/dev/attestation/report`; are you running under SGX?")
+    sys.exit(1)
+
+with open("/dev/attestation/my_target_info", "rb") as f:
+    my_target_info = f.read()
+
+with open("/dev/attestation/target_info", "wb") as f:
+    f.write(my_target_info)
+
+with open("/dev/attestation/user_report_data", "wb") as f:
+    f.write(b"\0" * 64)
+
+with open("/dev/attestation/report", "rb") as f:
+    report = f.read()
+
+print(f"Generated SGX report with size = {len(report)} and the following fields:")
+print(f"  ATTRIBUTES.FLAGS: {report[48:56].hex()}  [ Debug bit: {report[48] & 2 > 0} ]")
+print(f"  ATTRIBUTES.XFRM:  {report[56:64].hex()}")
+print(f"  MRENCLAVE:        {report[64:96].hex()}")
+print(f"  MRSIGNER:         {report[128:160].hex()}")
+print(f"  ISVPRODID:        {report[256:258].hex()}")
+print(f"  ISVSVN:           {report[258:260].hex()}")
+print(f"  REPORTDATA:       {report[320:352].hex()}")
+print(f"                    {report[352:384].hex()}")</pre>
+Inoltre, bisogna modificare il manifest file aggiungendo tutti i file necessari ad eseguire un’istanza dell’interprete python e specificare il tipo di attestazione richiesta.
+
+<pre>libos.entrypoint = "{{ entrypoint }}"
+
+loader.log_level = "{{ log_level }}"
+
+loader.env.LD_LIBRARY_PATH = "/lib:/lib:{{ arch_libdir }}:/usr/{{ arch_libdir }}"
+
+loader.insecure__use_cmdline_argv = true
+
+sys.enable_sigterm_injection = true
+
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/usr/{{ arch_libdir }}", uri = "file:/usr/{{ arch_libdir }}" },
+{% for path in python.get_sys_path(entrypoint) %}
+  { path = "{{ path }}", uri = "file:{{ path }}" },
+{% endfor %}
+  { path = "{{ entrypoint }}", uri = "file:{{ entrypoint }}" },
+
+  { type = "tmpfs", path = "/tmp" },
+]
+
+sys.stack.size = "2M"
+sys.enable_extra_runtime_domain_names_conf = true
+
+sgx.enclave_size = "1G"
+
+sgx.remote_attestation = "dcap"
+
+sgx.trusted_files = [
+  "file:{{ entrypoint }}",
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ arch_libdir }}/",
+  "file:/usr/{{ arch_libdir }}/",
+{% for path in python.get_sys_path(entrypoint) %}
+  "file:{{ path }}{{ '/' if path.is_dir() else '' }}",
+{% endfor %}
+  "file:main.py",
+]</pre>
+Il Makefile è analogo al caso precedente. Il risultato è riportato in [[#fig:ra-low-level-example|12]].
+
+<div id="fig:ra-low-level-example" class="figure">
+
+<div class="center">
+
+[[File:ra-low-level-example.png]]
+
+</div>
+
+</div>
+<span id="ra-tls-1"></span>
+==== RA-TLS ====
+
+Gramine non effettua nessuna scelta sull’implmentazione TLS da utilizzare (è possibile utilizzare sia OpenSSL che mbedtls). Il codice mostrato è tratto dall’esempio &quot;ra-tls-mbedtls&quot;. Il server deve essere eseguito in un enclave; mentre il client può essere un’applicazione normale (può essere eseguito in un enclave). Una volta compilata l’applicazione con
+
+<pre>make clean app dcap </pre>
+bisogna ottenere le informazioni da passare al client per verificare la firma del server. Questo può essere fatto con il tool ''gramine-sgx-sigstruct-view''.
+
+Per esempio può essere eseguita una demo con
+
+<pre>gramine-sgx ./server &amp;
+
+RA_TLS_MRENCLAVE=&lt;MRENCLAVE of the server enclave&gt; \
+RA_TLS_MRSIGNER=&lt;MRSIGNER of the server enclave&gt; \
+RA_TLS_ISV_PROD_ID=&lt;ISV_PROD_ID of the server enclave&gt; \
+RA_TLS_ISV_SVN=&lt;ISV_SVN of the server enclave&gt; \
+./client dcap</pre>
+Inoltre, bisogna ricordare di impostare le seguenti variabili d’ambiente se si eseguono le enclave in modalità debug o non si sono effettuati aggiornamenti al bios:
+
+<pre>export RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1
+export RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1
+export RA_TLS_ALLOW_HW_CONFIG_NEEDED=1
+export RA_TLS_ALLOW_SW_HARDENING_NEEDED=1 </pre>
+<span id="secret-provisioning-1"></span>
+==== Secret provisioning ====
+
+Il secret provisioning deve essere configurato nel manifest con le seguenti variabili:
+
+* '''''SECRET_PROVISION_CONSTRUCTOR''''': se impostato a ''1'' effettua il provisioning prima di eseguire l’entrypoint in maniera automatica;
+* '''''SECRET_PROVISION_SET_KEY''''': nome della chiave con cui verrà salvata in ''/dev/attestation/keys'' (default a ''default'');
+* '''''SECRET_PROVISION_SERVERS''''': lista dei server da contattare per avere il segreto (default a ''localhost:4433'') o può essere fornita come argomento alla funzione ''secret_provision_start()''
+
+Il segreto può essere ricavato o in maniera automatica o utilizzando la funzione ''secret_provision_get()''.
+
+<span id="esempio-minimale"></span>
+==== Esempio minimale ====
+
+Per avere un segreto prima che l’applicazione parta, bisogna aggiungere i seguenti campi al manifest file.
+
+<pre class="Toml">loader.env.LD_PRELOAD = &quot;libsecret_prov_attest.so&quot;
+loader.env.SECRET_PROVISION_CONSTRUCTOR = &quot;1&quot;
+loader.env.SECRET_PROVISION_SET_KEY = &quot;default&quot;
+loader.env.SECRET_PROVISION_CA_CHAIN_PATH = &quot;/ca.crt&quot;
+loader.env.SECRET_PROVISION_SERVERS = &quot;localhost:4433&quot;
+sgx.remote_attestation = &quot;dcap&quot;</pre>
+Il server è mostrato in [[#lst:server-secret-prov|[lst:server-secret-prov]]].
+
+<pre>#include <stdio.h>
+
+#include "secret_prov.h"
+
+#define PORT "4433"
+#define SRV_CRT_PATH "./ssl/server.crt"
+#define SRV_KEY_PATH "./ssl/server.key"
+
+int main(void) {
+  uint8_t secret[] = "A_SIMPLE_SECRET";
+  puts("--- Starting the Secret Provisioning server on port " PORT " ---");
+  int ret = secret_provision_start_server(
+      secret, sizeof(secret), PORT, SRV_CRT_PATH, SRV_KEY_PATH, NULL, NULL);
+  if (ret < 0) {
+    fprintf(stderr, "[error] secret_provision_start_server() returned %d\n",
+            ret);
+    return 1;
+  }
+  return 0;
+}</pre>
+Il client riceve il segreto come variabile d’ambiente.
+
+<pre>#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+  char *secret = getenv("SECRET_PROVISION_SECRET_STRING");
+  if (secret)
+    printf("--- Received secret = '%s' ---\n", secret);
+  else
+    printf("--- Did not receive any secret! ---\n");
+
+  return 0;
+}</pre>
+Per eseguire l’esempio, bisogna impostare a ''false'' il flag ''use_secure_cert'' nel file ''/etc/sgx_default_qcnl.conf'' e rieseguire AESM con ''/restart-aesm.sh''. Compilare client e server con:
+
+<pre>make clean app dcap </pre>
+Successivamente, bisogna ricavare i valori di firma dell’enclave dal file ''client.sig'' con ''gramine-sgx-sigstruct-view'', eseguire il server e l’enclave con gramine-sgx ([[#fig:secret-prov-example|13]]). Se si verificano errori quali '''''TCB Outdated''''', bisogna esportare le variabili d’ambiente:
+
+<pre>export RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1
+export RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1
+export RA_TLS_ALLOW_HW_CONFIG_NEEDED=1
+export RA_TLS_ALLOW_SW_HARDENING_NEEDED=1 </pre>
+<div id="fig:secret-prov-example" class="figure">
+
+<div class="center">
+
+[[File:secret-prov-example.png]]
+
+</div>
+
+</div>
+Il server può specificare una ''callback'' per comunicare con il client per creare un protocollo più complicato. Come mostrato in [[#lst:server-secret-prov-callback|[lst:server-secret-prov-callback]]], il server può interagire con il client attraverso ''secret_provision_write'' e ''secret_provision_read''.
+
+<pre>static int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
+ int ret;
+ ret = secret_provision_read(ctx, buf, sizeof(buf));
+
+  /* if we reached this callback, the first secret was sent successfully */
+  printf("--- Sent secret1 ---\n");
+  ret = secret_provision_write(ctx, (uint8_t*)SECOND_SECRET, sizeof(SECOND_SECRET));
+  if (ret < 0) {
+    fprintf(stderr, "[error] secret_provision_write() returned %d\n", ret);
+    return -EINVAL;
+  }
+
+  printf("--- Sent secret2 = '%s' ---\n", SECOND_SECRET);
+  return 0;
+}
+int main(void) {
+    puts("--- Starting the Secret Provisioning server on port " PORT " ---");
+    ret = secret_provision_start_server((uint8_t*)FIRST_SECRET, sizeof(FIRST_SECRET),
+                                        PORT, SRV_CRT_PATH, SRV_KEY_PATH,
+                                        NULL,
+                                        communicate_with_client_callback);
+    if (ret < 0) {
+        fprintf(stderr, "[error] secret_provision_start_server() returned %d\n", ret);
+        return 1;
+    }
+    return 0;
+} </pre>
+<span id="applicazione-data-sealing"></span>
+== Applicazione Data Sealing ==
+
+<span id="gramine-2"></span>
+=== Gramine ===
+
+Il sealing dei dati sul disco può essere fatto specificando '''''encrypted''''' come valore dell’attributo ''type'' di un ''mount'', come mostrato in [[#lst:gramine-data-sealing|[lst:gramine-data-sealing]]]. Di conseguenza, tutti i file (ricorsivamente) saranno cifrati. La chiave con cui vengono cifrati i file può essere specificata in ''3'' modi:
+
+* ''hardcoded'': per motivi di test e per rendere riproducibili gli esperimenti, una chiave può essere fornita come stringa esadecimale [[#lst:gramine-data-sealing|[lst:gramine-data-sealing]]];
+* ''unique'': usando i nomi ''_sgx_mrenclave'' o ''_sgx_mrsigner'' si utilizzano delle chiavi che rende impossibile decifrare i file su altre piattaforme SGX in quanto legate alla firma dell’enclave;
+* ''shared'': recuperata da un servizio remoto con le API di secret provisioning
+
+<pre class="toml">loader.env.LD_PRELOAD = &quot;libsecret_prov_attest.so&quot;
+loader.env.SECRET_PROVISION_CONSTRUCTOR = &quot;1&quot;
+loader.env.SECRET_PROVISION_SET_KEY = &quot;test&quot;
+loader.env.SECRET_PROVISION_CA_CHAIN_PATH = &quot;/ca.crt&quot;
+loader.env.SECRET_PROVISION_SERVERS = &quot;localhost:4433&quot;
+sgx.remote_attestation = &quot;dcap&quot;
+fs.mounts = [
+  { type = &quot;encrypted&quot;, path = &quot;/db1/&quot;, uri = &quot;file:db1/&quot;, key_name = &quot;default&quot; },
+  { type = &quot;encrypted&quot;, path = &quot;/db2/&quot;, uri = &quot;file:db2/&quot;, key_name = &quot;_sgx_mrenclave&quot; },
+  { type = &quot;encrypted&quot;, path = &quot;/db3/&quot;, uri = &quot;file:db3/&quot;, key_name = &quot;test&quot; },
+]
+fs.insecure__keys.default = &quot;ffeeddccbbaa99887766554433221100&quot;</pre>
+L’applicazione scrive in ''3'' cartelle differenti un messaggio e questo viene cifato secondo le modalità descritte sopra.
+
+<pre>#include <stdio.h>
+#include <stdlib.h>
+
+int write_to_file(const char* fname) {
+  FILE* f;
+  int ret = 0;
+  f = fopen(fname, "w");
+
+  if (!f) {
+    ret = -1;
+    goto exit;
+  }
+  fprintf(f, "%s - %s", fname, "hello world");
+
+  fclose(f);
+exit:
+  return ret;
+}
+
+int main(void) {
+  const char* files[3] = {"db1/a.txt", "db2/a.txt", "db3/a.txt"};
+  int rc = 0;
+
+  for (int i = 0; i < 3; i++) {
+    rc = write_to_file(files[i]);
+    if (rc < 0) {
+      printf("%s ", files[i]);
+      perror("error writing file");
+    }
+  }
+
+
+  return 0;
+}</pre>
+Il secret provisioning viene effettuato utilizzando un server analogo a quello dell’esempio precedente, mentre di seguito viene riportato il manifest completo.
+
+<pre class="Toml">libos.entrypoint = &quot;/app&quot;
+
+loader.log_level = &quot;{{ log_level }}&quot;
+
+loader.env.LD_LIBRARY_PATH = &quot;/lib:/lib:{{ arch_libdir }}:/usr/{{ arch_libdir }}&quot;
+loader.env.LD_PRELOAD = &quot;libsecret_prov_attest.so&quot;
+loader.env.SECRET_PROVISION_CONSTRUCTOR = &quot;1&quot;
+loader.env.SECRET_PROVISION_SET_KEY = &quot;test&quot;
+loader.env.SECRET_PROVISION_CA_CHAIN_PATH = &quot;/ca.crt&quot;
+loader.env.SECRET_PROVISION_SERVERS = &quot;localhost:4433&quot;
+sgx.remote_attestation = &quot;dcap&quot;
+
+fs.mounts = [
+  { path = &quot;/lib&quot;, uri = &quot;file:{{ gramine.runtimedir() }}&quot; },
+  { path = &quot;{{ arch_libdir }}&quot;, uri = &quot;file:{{ arch_libdir }}&quot; },
+  { path = &quot;/usr/{{ arch_libdir }}&quot;, uri = &quot;file:/usr/{{ arch_libdir }}&quot; },
+  { path = &quot;/ca.crt&quot;, uri = &quot;file:ssl/ca.crt&quot; },
+  { path = &quot;/etc/hosts&quot;, uri = &quot;file:hosts&quot; },
+
+  { type = &quot;encrypted&quot;, path = &quot;/db1/&quot;, uri = &quot;file:db1/&quot;, key_name = &quot;default&quot; },
+  { type = &quot;encrypted&quot;, path = &quot;/db2/&quot;, uri = &quot;file:db2/&quot;, key_name = &quot;_sgx_mrenclave&quot; },
+  { type = &quot;encrypted&quot;, path = &quot;/db3/&quot;, uri = &quot;file:db3/&quot;, key_name = &quot;test&quot; },
+]
+fs.insecure__keys.default = &quot;ffeeddccbbaa99887766554433221100&quot;
+
+sys.stack.size = &quot;2M&quot;
+sys.enable_extra_runtime_domain_names_conf = true
+
+sgx.trusted_files = [
+  &quot;file:app&quot;,
+  &quot;file:{{ gramine.runtimedir() }}/&quot;,
+  &quot;file:{{ arch_libdir }}/&quot;,
+  &quot;file:/usr{{ arch_libdir }}/&quot;,
+  &quot;file:./db1/&quot;,
+  &quot;file:./db2/&quot;,
+  &quot;file:./db3/&quot;,
+  &quot;file:ssl/ca.crt&quot;,
+  &quot;file:hosts&quot;,
+]
+</pre>
+L’applicazione può essere compilata come mostrato di seguito. Prima di eseguire l’enclave, bisogna eseguire il server con i parametri dell’enclave come mostrato in [[#fig:secret-prov-example|13]].
+
+<pre>make clean app build dcap </pre>
+<span id="openenclave-1"></span>
+=== OpenEnclave ===
+
+OpenEnclave non fornisce API di alto livello come quelle di gramine, ma mette a disposizione delle funzioni per fare il ''sealing'' dei dati utilizzando una chiave ''unique'' ricavata in modo simile all’enclave. La specifica EDL in [[#lst:edl-data-seal-example|[lst:edl-data-seal-example]]], definisce due funzioni ('''''seal_data''''' e '''''unseal_data''''') che cifrano un buffer di dati nell’enclave a partire da una privacy policy che può essere:
+
+* ''unique'': i dati sono accessibili sono dall’enclave che l’ha cifrata;
+* ''product'': i dati possono essere decifrati da tutti le enclave che eseguono sulla piattaforma;
+
+<pre>// Copyright (c) Open Enclave SDK contributors.
+// Licensed under the MIT License.
+
+enclave {
+    from &quot;openenclave/edl/syscall.edl&quot; import *;
+    from &quot;openenclave/edl/logging.edl&quot; import *;
+    from &quot;platform.edl&quot; import *;
+
+    include &quot;common/shared.h&quot;
+
+    struct data_t
+    {
+        [size=size] uint8_t* data;
+        size_t size;
+    };
+
+    trusted {
+        public int seal_data(int sealPolicy,
+                             [in, size = opt_msg_len] unsigned char* opt_mgs,
+                             size_t opt_msg_len,
+                             [in, size = data_size] unsigned char* data,
+                             size_t data_size,
+                             [out] data_t* sealed_data);
+
+        public int unseal_data([in] const data_t* sealed_data,
+                               const int optional_msg_flag,
+                               [out] data_t* output_data);
+
+    };
+
+    //untrusted {
+    //    no untrusted functions in this sample
+    //};
+};</pre>
+Queste due funzioni, utilizzano le primitive di openenclave ''oe_seal'' e ''oe_unseal'' per cifrare i dati configurando automaticamente le chiavi. Ad esempio, in [[#lst:oe-seal-data-example|[lst:oe-seal-data-example]]], è riportato come viene implementata la ''oe_seal''.
+
+<pre> 
+int ecall_dispatcher::seal_data(
+    int seal_policy,
+    const unsigned char* optional_message,
+    size_t optional_message_size,
+    const unsigned char* data,
+    size_t data_size,
+    data_t* sealed_data)
+{
+    oe_result_t ret;
+    uint8_t* blob;
+    size_t blob_size;
+    sealed_data_t* temp_sealed_data;
+
+    if (optional_message_size > sizeof(temp_sealed_data->optional_message))
+        return OE_INVALID_PARAMETER;
+
+    const oe_seal_setting_t settings[] = {OE_SEAL_SET_POLICY(seal_policy)};
+    ret = oe_seal(
+        NULL,
+        settings,
+        sizeof(settings) / sizeof(*settings),
+        data,
+        data_size,
+        optional_message,
+        optional_message_size,
+        &blob,
+        &blob_size);
+    if (ret != OE_OK)
+    {
+        TRACE_ENCLAVE("oe_seal() failed with %d\n", ret);
+        goto exit;
+    }
+    if (blob_size > UINT32_MAX)
+    {
+        TRACE_ENCLAVE("blob_size is too large to fit into an unsigned int");
+        ret = OE_OUT_OF_MEMORY;
+        goto exit;
+    }
+
+    temp_sealed_data =
+        (sealed_data_t*)malloc(sizeof(*temp_sealed_data) + blob_size);
+    if (temp_sealed_data == NULL)
+    {
+        ret = OE_OUT_OF_MEMORY;
+        goto exit;
+    }
+
+    memset(temp_sealed_data, 0, sizeof(*temp_sealed_data));
+    memcpy(
+        temp_sealed_data->optional_message,
+        optional_message,
+        optional_message_size);
+    temp_sealed_data->sealed_blob_size = blob_size;
+    memcpy(temp_sealed_data + 1, blob, blob_size);
+
+    sealed_data->data = (uint8_t*)temp_sealed_data;
+    sealed_data->size = sizeof(*temp_sealed_data) + blob_size;
+
+exit:
+    oe_free(blob);
+    return (int)ret;
+}</pre>
+Dall’host vengono fatte delle ECALL per cifrare dei dati che poi vengono salvati su file e poi decifrati. Una parte del codice è riportata in [[#lst:host-data-sealing|[lst:host-data-sealing]]].
+
+<pre>enclave = create_enclave(argv[1]);
+data = (unsigned char*)g_plain_text;
+data_size = strlen((const char*)data) + 1;
+result = seal_data(
+  enclave,
+  &ret,
+  policy,
+  (unsigned char*)g_opt_msg,
+  strlen(g_opt_msg),
+  data,
+  data_size,
+  &sealed_data);
+// Save sealed data to file
+sealed_file.open("sealed", ios::out | ios::binary);
+sealed_file.write(reinterpret_cast<const char*>(sealed_data.data), sealed_data.size);
+sealed_file.close();
+cout << "Host: Sealed data saved to file 'sealed'" << endl;
+
+// read from file and decrypt
+result = unseal_data(enclave, &ret, &sealed_data, 1, &unsealed_data);
+
+// print unsealed data
+cout << "Host: Unsealed result:" << endl;
+printf("data=%s --- ", unsealed_data.data);
+
+printf("data_size=%zd\n", unsealed_data.size);</pre>
+Il programma può essere compilato ed eseguito con il comando di seguito. Il risultato è riportato in [[#fig:oe-seal-data-example|14]].
+
+<pre>make clean private.pem all run</pre>
+<div id="fig:oe-seal-data-example" class="figure">
+
+<div class="center">
+
+[[File:oe-data-sealing-example.png]]
+
+</div>
+
+</div>
+<span id="sviluppi-futuri-intel-trusted-domains-extentions-tdx"></span>
+= Sviluppi futuri: Intel Trusted Domains Extentions (TDX) =
+
+Lo sviluppo di SGX ha subito un rallentamento in favore di tecnologie che sfruttano la virtualizzazione. Intel nel 2021 ha proposto '''''Trusted Domain Extensions'' (TDX)''' che introduce un’altra modalità all’interno della CPU: '''''Secure Arbitration Mode (SEAM)''''' ([[#fig:tdx-architecture|15]]). TDX è un’implementazione di TEE basata su macchine virtuali come ''CoVE'' e AMD-SEV.
+
+Intel TDX mette insieme diverse tecnologie consolidate per offrire un’implementazione TEE con supporto per la virtualizzazione[[#ref-Cheng2024|[14]]] quali:
+
+* Intel VT-x: tecnologia che supporta la virtualizzazione in hardware unitamente a EPT;
+* Intel SGX: implementazione di TEE in ''user space'';
+* Intel MKTME/TME: tecnologia per cifrare la memoria con diverse chiavi il cui identificativo viene codificato nei bit più alti dell’indirizzo;
+
+<div id="fig:tdx-architecture" class="figure">
+
+<div class="center">
+
+[[File:tdx-architecture.png]]
+
+</div>
+
+</div>
+<span id="virtualizzazione"></span>
+== Virtualizzazione ==
+
+Il concetto principale di TDX è il '''''Trusted Domain'' (TD)''' di cui viene garantita la confidenzialità e l’integrità della memoria e dello stato delle vCPU. TDX utilizza VT per garantire la separazione i ''trusted domains''. In particolare, il modulo TDX e i TD eseguono in un nuovo stato all’interno degli stati ''VMX Root'' e ''Non root''. Nelle prime versioni di TDX non è disponibile la virtualizzazione innestata e c’è un limitato supporto alla condivisione di memoria. Per ogni TD, sono create due EPT: una privata e cifrata e un’altra in chiaro.
+
+<span id="memory-protection"></span>
+== Memory protection ==
+
+La protezione della memoria viene fatta utilizzando la '''''Multiple Keys Total Memory Encryption'' (MKTME)'''. La cifratura della memoria viene affidata completamente al modulo TDX che gestisce le chiavi di ogni singolo TD. MKTME prevede la cifratura della memoria con una chiave identificata da un '''''Host Key Identifier'' (HKID)''' codificata all’interno dell’indirizzo fisico e memorizzata in una tabella detta '''''Key Encryption Table'' (KET)'''. Lo spazio delle chiavi è diviso in:
+
+* HKID private: chiavi assegnate a singoli TD;
+* HKID shared: chiavi utilizzate per la memoria condivisa;
+
+<span id="attestazione-2"></span>
+== Attestazione ==
+
+In TDX, l’attestazione è fortemente collegata alle ''architectural enclaves'' presentate in precedenza. TDX effettua un’attestazione locale con la Quoting Enclave e utilizza i servizi spiegati in precedenza per effettuare l’attestazione DCAP come in SGX. Il Quote di TDX include un certificato rilasciato da Intel.
+
+<div id="refs" class="references csl-bib-body" entry-spacing="0">
+
+<div id="ref-Jauernig2020" class="csl-entry">
+
+<span class="csl-left-margin">[1] </span><span class="csl-right-inline">P. Jauernig, A.-R. Sadeghi, and E. Stapf, <span>“Trusted execution environments: Properties, applications, and challenges,”</span> ''IEEE Security &amp; Privacy'', vol. 18, no. 2, pp. 56–60, 2020, doi: [https://doi.org/10.1109/MSEC.2019.2947124 10.1109/MSEC.2019.2947124].</span>
+
+
+</div>
+<div id="ref-Costan2016" class="csl-entry">
+
+<span class="csl-left-margin">[2] </span><span class="csl-right-inline">V. Costan and S. Devadas, <span>“Intel SGX explained.”</span> Cryptology ePrint Archive, Paper 2016/086, 2016. Available: https://eprint.iacr.org/2016/086</span>
+
+
+</div>
+<div id="ref-10.1145/2948618.2954331" class="csl-entry">
+
+<span class="csl-left-margin">[3] </span><span class="csl-right-inline">F. McKeen ''et al.'', <span>“Intel® software guard extensions (intel® SGX) support for dynamic memory management inside an enclave,”</span> in ''Proceedings of the hardware and architectural support for security and privacy 2016'', 2016. doi: [https://doi.org/10.1145/2948618.2954331 10.1145/2948618.2954331].</span>
+
+
+</div>
+<div id="ref-GramineDocs" class="csl-entry">
+
+<span class="csl-left-margin">[4] </span><span class="csl-right-inline"><span>“<span class="nocase"> Gramine documentation</span>.”</span> https://gramine.readthedocs.io/en/v1.8/.</span>
+
+
+</div>
+<div id="ref-Tsai2017" class="csl-entry">
+
+<span class="csl-left-margin">[5] </span><span class="csl-right-inline">C. Tsai, D. E. Porter, and M. Vij, <span>“Graphene-SGX: A practical library OS for unmodified applications on SGX,”</span> in ''2017 USENIX annual technical conference (USENIX ATC 17)'', Jul. 2017, pp. 645–658. Available:[[
+         https://www.usenix.org/conference/atc17/technical-sessions/presentation/tsai
+         | https://www.usenix.org/conference/atc17/technical-sessions/presentation/tsai ]]</span>
+
+
+</div>
+<div id="ref-gramine-repo" class="csl-entry">
+
+<span class="csl-left-margin">[6] </span><span class="csl-right-inline">Intel,<span>“<span> Gramine Source Code</span>.”</span>[[ https://github.com/gramineproject/gramine/]], 2024.</span>
+
+
+</div>
+<div id="ref-IntelSDK" class="csl-entry">
+
+<span class="csl-left-margin">[7] </span><span class="csl-right-inline"><span>“<span class="nocase">Intel SGX, Documentation for Linux SDK </span>.”</span>[[ https://download.01.org/intel-sgx/sgx-linux/2.25/docs/ | https://download.01.org/intel-sgx/sgx-linux/2.25/docs/]].</span>
+
+
+</div>
+<div id="ref-example-repo" class="csl-entry">
+
+<span class="csl-left-margin">[8] </span><span class="csl-right-inline">G. Capasso,<span>“<span> Gramine Source Code</span>.”</span>[[ https://github.com/alarmfox/confidential-computing-tools
+                  | https://github.com/alarmfox/confidential-computing-tools
+]], 2024.</span>
+
+
+</div>
+<div id="ref-linux-sgx" class="csl-entry">
+
+<span class="csl-left-margin">[9] </span><span class="csl-right-inline">Intel,<span>“<span class="nocase"> Linux-sgx Source Code</span>.”</span>[[ https://github.com/intel/linux-sgx/]], 2024.</span>
+
+
+</div>
+<div id="ref-openenclave" class="csl-entry">
+
+<span class="csl-left-margin">[10] </span><span class="csl-right-inline"><span>“<span class="nocase">Open Enclave repository </span>.”</span> https://github.com/openenclave/openenclave.</span>
+
+
+</div>
+<div id="ref-sgx-dcap-docs" class="csl-entry">
+
+<span class="csl-left-margin">[11] </span><span class="csl-right-inline">Intel,<span>“<span> DCAP Documentation References</span>.”</span> [[
+                  https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/docs/ |
+                  https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/docs/]], 2024.</span>
+
+
+</div>
+<div id="ref-sgx-dcap-repo" class="csl-entry">
+
+<span class="csl-left-margin">[12] </span><span class="csl-right-inline">Intel,<span>“<span> DCAP Source Code</span>.”</span> [[
+                  https://github.com/intel/SGXDataCenterAttestationPrimitives |
+                  https://github.com/intel/SGXDataCenterAttestationPrimitives]], 2024.</span>
+
+
+</div>
+<div id="ref-quickstart-dcap" class="csl-entry">
+
+<span class="csl-left-margin">[13] </span><span class="csl-right-inline">Intel,<span>“<span class="nocase"> Tutorial DCAP setup</span>.”</span> [[
+                  https://www.intel.com/content/www/us/en/developer/articles/guide/intel-software-guard-extensions-data-center-attestation-primitives-quick-install-guide.html
+                  |
+                  https://www.intel.com/content/www/us/en/developer/articles/guide/intel-software-guard-extensions-data-center-attestation-primitives-quick-install-guide.html
+]], 2018.</span>
+
+
+</div>
+<div id="ref-Cheng2024" class="csl-entry">
+
+<span class="csl-left-margin">[14] </span><span class="csl-right-inline">P.-C. Cheng ''et al.'', <span>“Intel TDX demystified: A top-down approach,”</span> ''ACM Comput. Surv.'', vol. 56, no. 9, Apr. 2024, doi: [https://doi.org/10.1145/3652597 10.1145/3652597].</span>
+
+
+</div>
+
+</div>
+

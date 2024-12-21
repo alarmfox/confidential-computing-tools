@@ -107,8 +107,8 @@
   \raggedright % Allinea a sinistra
 
   \begin{tikzpicture}
-    \node[anchor=south west] at (4,0) {\includegraphics[scale=0.75]{./figures/unina-logo-1.png}};
-    \node[anchor=south west] at (0,1.5) {\includegraphics{./figures/unina-logo-2.png}};
+    \node[anchor=south west] at (4,0) {\includegraphics[scale=0.75]{figures/unina-logo-1.png}};
+    \node[anchor=south west] at (0,1.5) {\includegraphics{figures/unina-logo-2.png}};
     \node[anchor=south west] at (0,0.5) {\textsf{Scuola Politecnica e delle Scienze di Base}};
     \node[anchor=south west] at (0,0) {\textsf{Corso di Laurea Magistrale in Ingegneria Informatica}};
   \end{tikzpicture}
@@ -222,12 +222,12 @@ L'attestazione può essere fatta con due procedimenti: EPID (\cref{fig:ra-epid},
 \centering
 \begin{subfigure}{.5\textwidth}
   \centering
-  \includegraphics[width=.95\textwidth]{./figures/ch1/ra-sgx-epid.png}
+  \includegraphics[width=.95\textwidth]{figures/ch1/ra-sgx-epid.png}
   \caption{Attestazione remota con EPID}\label{fig:ra-epid}
 \end{subfigure}%
 \begin{subfigure}{.5\textwidth}
   \centering
-    \includegraphics[width=.95\textwidth]{./figures/ch1/ra-sgx-dcap.png}
+    \includegraphics[width=.95\textwidth]{figures/ch1/ra-sgx-dcap.png}
   \caption{Attestazione locale con DCAP}\label{fig:ra-dcap}
 \end{subfigure}
 \caption{Confronto tra attestazione remota con EPID e DCAP}
@@ -487,7 +487,7 @@ Per usare correttamente le primitive DCAP, è necessario compilare da codice sor
 \begin{verbatim}
  docker build -t gramine-dcap . 
 \end{verbatim}
-\lstinputlisting[caption=Dockerfile per la creazione di un ambiente di sviluppo riproducibile con Gramine,label=lst:gramine-sdk-dockerfile,language=docker]{../../gramine/Dockerfile}
+\lstinputlisting[caption=Dockerfile per la creazione di un ambiente di sviluppo riproducibile con Gramine,label=lst:gramine-sdk-dockerfile,language=docker]{../gramine/Dockerfile}
 
 \begin{verbatim}
  docker run \
@@ -531,17 +531,17 @@ Le API Key possono essere ottenute registrando un account su questo \href{https:
 \centering
 \begin{subfigure}{.5\textwidth}
   \centering
-  \includegraphics[width=.95\textwidth]{./figures/ch3/intel-portal-1.png}
+  \includegraphics[width=.95\textwidth]{figures/ch3/intel-portal-1.png}
   \caption{Navigazione sul sito}
 \end{subfigure}%
 \begin{subfigure}{.5\textwidth}
   \centering
-  \includegraphics[width=.95\textwidth]{./figures/ch3/intel-portal-2.png}
+  \includegraphics[width=.95\textwidth]{figures/ch3/intel-portal-2.png}
   \caption{Click sul pulsante subscribe}
 \end{subfigure}
 \begin{subfigure}{.5\textwidth}
   \centering
-  \includegraphics[width=.95\textwidth]{./figures/ch3/intel-portal-3.png}
+  \includegraphics[width=.95\textwidth]{figures/ch3/intel-portal-3.png}
   \caption{Creazione API Key}
 \end{subfigure}
 \caption{Procedura di registrazione sul sito Intel}
@@ -809,7 +809,7 @@ Il Makefile principale si limita a richiamare gli altri file nelle rispettive se
 
 \paragraph{Applicazione host} L'applicazione host gestisce il ciclo di vita dell'enclave dalla sua creazione alla distruzione. Il codice (in cui sono stati omessi i controlli degli errori per brevità) è riportato in \cref{lst:openenclave-helloworld-host}. Questo non cambia molto rispetto ad un'applicazione classica in $C$. La funzione \textit{oe\_create\_helloworld\_enclave} crea l'enclave e prende come primo parametro il path per l'enclave firmata definito nella macro \textit{ENCLAVE\_SIGNED\_PATH}. Alla creazione dell'enclave viene verificata la firma e viene popolata la EPC. La funzione \textit{enclave\_helloworld} è una funzione nella parte trusted che esegue nel TEE (una ECALL) alla quale corrisponde un cambio di contesto del processore. Infine, con \textit{oe\_terminate\_enclave}, si elimina l'enclave.
 
-\lstinputlisting[language=C,caption=Codice principale applicazione host,label=lst:openenclave-helloworld-host]{../../openenclave/examples/helloworld/host/host.c}
+\lstinputlisting[language=C,caption=Codice principale applicazione host,label=lst:openenclave-helloworld-host]{../openenclave/examples/helloworld/host/host.c}
 
 Questo componente è dotato di un Makefile, riportato in \cref{lst:openenclave-helloworld-host-makefile}, in cui si compila normalmente l'applicazione dopo aver generato i flag del compilatore a partire da \textit{open-enclave}. Il compilatore utilizzato è \textit{clang}, ma sono supportati anche \textbf{\textit{cc}} e \textbf{\textit{gcc}}. Per cambiare compilatore, bisogna modificare il valore della variabile \textit{CC} per ogni Makefile.
 
