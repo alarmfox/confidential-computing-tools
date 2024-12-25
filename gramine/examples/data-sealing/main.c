@@ -1,8 +1,7 @@
 #include <stdio.h>
-#include <stdlib.h>
 
-int write_to_file(const char* fname) {
-  FILE* f;
+int write_to_file(const char *fname) {
+  FILE *f;
   int ret = 0;
   f = fopen(fname, "w");
 
@@ -18,7 +17,7 @@ exit:
 }
 
 int main(void) {
-  const char* files[3] = {"db1/a.txt", "db2/a.txt", "db3/a.txt"};
+  const char *files[3] = {"db1/a.txt", "db2/a.txt", "db3/a.txt"};
   int rc = 0;
 
   for (int i = 0; i < 3; i++) {
@@ -28,7 +27,6 @@ int main(void) {
       perror("error writing file");
     }
   }
-
 
   return 0;
 }
