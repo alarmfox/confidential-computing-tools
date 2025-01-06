@@ -18,3 +18,4 @@ pccs/ssl_key/
 *_t.*
 *_t.*
 *.pem
+*.o
