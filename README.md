@@ -25,6 +25,6 @@ The entire setup can be run using Docker containers, ensuring a consistent and i
 1. **Clone the Repository**
 
    ```bash
-   git clone https://github.com/yourusername/your-repo-name.git
-   cd your-repo-name
+   git clone https://github.com/alarmfox/confidential-computing-tools.git
+   cd configdential-computing-tools
    ```
